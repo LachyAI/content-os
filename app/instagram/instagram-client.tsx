@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,6 +22,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { ScriptsTab } from "./scripts-tab";
+import { useScripts } from "@/lib/use-scripts";
 import { cn } from "@/lib/utils";
 import {
   PlusCircle,
@@ -38,8 +40,9 @@ import {
 } from "lucide-react";
 import { getAllPosts } from "@/lib/competitor-data";
 import type { Post } from "@/lib/competitor-data";
+import { getSavedHooks } from "@/lib/hook-patterns";
 
-type Format = "reel" | "post" | "album" | "story";
+type Format = "reel" | "post" | "album" | "story" | "ig-pc" | "ig-raw";
 type Status = "ideas" | "scripted" | "filming" | "posted";
 // Supabase DB uses singular 'idea', UI uses 'ideas' — map at the boundary
 type DbStatus = "idea" | "scripted" | "filming" | "posted";
@@ -52,6 +55,8 @@ interface PostCard {
   status: Status;
   scheduledDate?: string;
   createdAt?: string;
+  // Link to a SavedScript (localStorage in useScripts)
+  scriptId?: string;
   // Performance tracking
   actual_likes?: number;
   actual_comments?: number;
@@ -84,6 +89,17 @@ const formatColors: Record<Format, string> = {
   album: "bg-blue-500/15 text-blue-400 border-blue-500/20",
   post: "bg-zinc-700/40 text-zinc-400 border-zinc-600/30",
   story: "bg-purple-500/15 text-purple-400 border-purple-500/20",
+  "ig-pc": "bg-cyan-500/15 text-cyan-400 border-cyan-500/20",
+  "ig-raw": "bg-orange-500/15 text-orange-400 border-orange-500/20",
+};
+
+const formatLabels: Record<Format, string> = {
+  reel: "Reel",
+  album: "Album",
+  post: "Post",
+  story: "Story",
+  "ig-pc": "IG - PC",
+  "ig-raw": "IG - iOS/Raw",
 };
 
 const SAMPLE_POSTS: PostCard[] = [
@@ -846,6 +862,380 @@ function HashtagManager() {
   );
 }
 
+// ─── Instagram Script Generator ──────────────────────────────────────────────
+
+type IgContentPillar = "Authority" | "Discipline & Lifestyle" | "Social & Magnetism" | "Tutorial" | "Behind the Scenes";
+
+interface IgScriptResult {
+  topic: string;
+  format: Format;
+  pillar: IgContentPillar;
+  script: string;
+}
+
+function IgScriptGenerator({ onAddToBoard }: { onAddToBoard: (title: string, script: string, format: Format) => void }) {
+  const [topic, setTopic] = useState("");
+  const [keyPoints, setKeyPoints] = useState("");
+  const [format, setFormat] = useState<Format>("reel");
+  const [pillar, setPillar] = useState<IgContentPillar>("Authority");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<IgScriptResult | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  async function generate() {
+    if (!topic.trim()) return;
+    setLoading(true);
+    setResult(null);
+
+    const formatLabel = format === "reel"
+      ? "Instagram Reel (under 30s)"
+      : format === "album"
+      ? "Instagram Carousel/Album"
+      : format === "story"
+      ? "Instagram Story"
+      : "Instagram Static Post";
+
+    const pointsBlock = keyPoints.trim()
+      ? `\nKey Points to Cover:\n${keyPoints.trim().split(/\n/).map(p => `- ${p.replace(/^[-•]\s*/, '')}`).join('\n')}\n`
+      : '';
+
+    // Inject proven hooks from the Hook Library
+    const savedHooksList = getSavedHooks()
+      .sort((a, b) => b.engagement - a.engagement)
+      .slice(0, 10);
+    const hookRefBlock = savedHooksList.length > 0
+      ? `\n\nPROVEN HOOKS (use these as inspiration for tone, structure, and pattern — adapt, don't copy):\n${savedHooksList.map((h, i) => `${i + 1}. "${h.hook}" (@${h.username}, ${h.engagement.toLocaleString()} engagement${h.pattern ? `, pattern: ${h.pattern}` : ''})`).join('\n')}\n`
+      : '';
+
+    const prompt = format === "album"
+      ? `You are an Instagram content strategist. Generate a carousel/album script for Instagram.
+
+Topic: ${topic}
+Content Pillar: ${pillar}${pointsBlock}
+Format: Instagram Carousel/Album (swipeable slides)
+
+Output EXACTLY this format (plain text only, no markdown):
+
+SLIDE 1 (Hook):
+- [Attention-grabbing opening line]
+- [Sub-hook or tension]
+
+SLIDE 2:
+- [Point 1 bullet]
+- [Supporting detail]
+
+SLIDE 3:
+- [Point 2 bullet]
+- [Supporting detail]
+
+SLIDE 4:
+- [Point 3 bullet]
+- [Supporting detail]
+
+SLIDE 5:
+- [Point 4 bullet]
+- [Supporting detail]
+
+SLIDE 6:
+- [Point 5 bullet]
+- [Supporting detail]
+
+SLIDE 7:
+- [Point 6 bullet]
+- [Supporting detail]
+
+SLIDE 8:
+- [Point 7 bullet / Insight]
+
+SLIDE 9 (CTA):
+- [Call to action]
+- [Follow / Save / DM prompt]
+
+Keep each slide to 2-3 bullets max. Mobile-first — short punchy text per slide.${hookRefBlock}`
+      : `You are an Instagram script architect. Generate a structured script for a ${formatLabel}.
+
+Topic: ${topic}
+Content Pillar: ${pillar}${pointsBlock}
+
+Output EXACTLY this format (plain text only, no markdown):
+
+HOOK (0-3s, word-for-word):
+"[Exact opening line — pattern interrupt, bold claim, or scroll-stopper]"
+
+SETUP (3-10s):
+- [Why they should care]
+- [What they'll get from watching]
+
+DEMO / VALUE (10-25s):
+- [Main point / demonstration]
+- [Supporting detail or example]
+- [Key insight]
+
+LANDING / CTA (25-30s):
+- [What it means for them]
+- [One clear CTA — follow / save / comment word]
+
+Keep bullet prompts concise — these are speaking cues, not full sentences.${hookRefBlock}`;
+
+    try {
+      const res = await fetch("/api/suggest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          platform: "instagram",
+          competitorPosts: [],
+          previousTitles: [],
+          context: prompt,
+          mode: "script",
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json() as { ideas?: { scriptOutline?: string; title?: string }[]; script?: string; raw?: string };
+        const scriptText =
+          data.script ??
+          data.raw ??
+          data.ideas?.[0]?.scriptOutline ??
+          JSON.stringify(data, null, 2);
+        setResult({ topic: topic.trim(), format, pillar, script: scriptText });
+      } else {
+        setResult({
+          topic: topic.trim(),
+          format,
+          pillar,
+          script: format === "album"
+            ? `SLIDE 1 (Hook):\n- [Could not generate — check API]\n\nSLIDE 9 (CTA):\n- Follow for more\n- Save this`
+            : `HOOK (0-3s, word-for-word):\n"[Could not generate — check API]"\n\nCTA (25-30s):\n- Follow for more\n- Comment your thoughts`,
+        });
+      }
+    } catch {
+      setResult({
+        topic: topic.trim(),
+        format,
+        pillar,
+        script: `HOOK (0-3s, word-for-word):\n"[Could not generate — check API]"\n\nCTA (25-30s):\n- Follow for more`,
+      });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function copyScript() {
+    if (!result?.script) return;
+    navigator.clipboard.writeText(result.script).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  function addToBoard() {
+    if (!result) return;
+    onAddToBoard(result.topic, result.script, result.format);
+  }
+
+  const formatBadgeClass = (f: Format) => {
+    if (f === "reel") return "bg-primary/10 text-primary border-primary/20";
+    if (f === "album") return "bg-blue-500/10 text-blue-400 border-blue-500/20";
+    if (f === "story") return "bg-purple-500/10 text-purple-400 border-purple-500/20";
+    return "bg-zinc-700/30 text-zinc-400 border-zinc-600/20";
+  };
+
+  return (
+    <div className="max-w-2xl space-y-4">
+      <Card className="bg-card border-border">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-medium">Generate Instagram Script</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            {`Reel: Hook (word-for-word) + bullet-prompt sections • Album: slide-by-slide bullets`}
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <label className="text-xs text-muted-foreground mb-1.5 block">Topic / Title</label>
+            <Input
+              placeholder="e.g. I built a system that books jobs while I sleep"
+              value={topic}
+              onChange={(e) => setTopic(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && !keyPoints && generate()}
+              className="bg-input border-border"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs text-muted-foreground mb-1.5 block">Key Points <span className="text-muted-foreground/50">(optional — one per line)</span></label>
+            <textarea
+              placeholder={"e.g.\nMissed calls cost tradies $2K/month\nSMS recovery gets 30% reply rate\nWhole system runs on autopilot"}
+              value={keyPoints}
+              onChange={(e) => setKeyPoints(e.target.value)}
+              rows={3}
+              className="w-full rounded-md bg-input border border-border px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-y"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-muted-foreground mb-1.5 block">Format</label>
+              <Select value={format} onValueChange={(v) => setFormat(v as Format)}>
+                <SelectTrigger className="bg-input border-border">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-popover border-border">
+                  <SelectItem value="reel">Reel (&lt;30s)</SelectItem>
+                  <SelectItem value="ig-pc">IG - PC (CapCut/edited)</SelectItem>
+                  <SelectItem value="ig-raw">IG - iOS/Raw</SelectItem>
+                  <SelectItem value="post">Post</SelectItem>
+                  <SelectItem value="album">Album / Carousel</SelectItem>
+                  <SelectItem value="story">Story</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1.5 block">Content Pillar</label>
+              <Select value={pillar} onValueChange={(v) => setPillar(v as IgContentPillar)}>
+                <SelectTrigger className="bg-input border-border">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-popover border-border">
+                  <SelectItem value="Authority">Authority</SelectItem>
+                  <SelectItem value="Discipline & Lifestyle">Discipline &amp; Lifestyle</SelectItem>
+                  <SelectItem value="Social & Magnetism">Social &amp; Magnetism</SelectItem>
+                  <SelectItem value="Tutorial">Tutorial</SelectItem>
+                  <SelectItem value="Behind the Scenes">Behind the Scenes</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <Button
+            onClick={generate}
+            disabled={loading || !topic.trim()}
+            className="bg-primary text-primary-foreground hover:bg-primary/90 w-full"
+          >
+            {loading ? (
+              <>
+                <Loader2 size={14} className="animate-spin mr-2" />
+                Generating...
+              </>
+            ) : (
+              <>
+                <Sparkles size={14} className="mr-2" />
+                Generate Script
+              </>
+            )}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {result && (
+        <Card className="bg-card border-border">
+          <CardHeader className="pb-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <CardTitle className="text-sm font-medium">{result.topic}</CardTitle>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded border ${formatBadgeClass(result.format)}`}>
+                    {result.format}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground">{result.pillar}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={copyScript}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium border border-border bg-secondary text-secondary-foreground hover:bg-secondary/80 transition-colors"
+                >
+                  {copied ? <Check size={12} /> : <Copy size={12} />}
+                  {copied ? "Copied" : "Copy"}
+                </button>
+                <button
+                  onClick={addToBoard}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+                >
+                  <PlusCircle size={12} />
+                  Add to Board
+                </button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <pre className="text-xs text-foreground/80 leading-relaxed whitespace-pre-wrap font-mono bg-secondary/30 rounded-lg p-4 overflow-x-auto">
+              {result.script}
+            </pre>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ─── Recent Competitor Posts ──────────────────────────────────────────────────
+
+function RecentIgPosts() {
+  const [collapsed, setCollapsed] = useState(true);
+  const [posts, setRecentPosts] = useState<Post[]>([]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("ig-scraped-data");
+      if (!raw) return;
+      const scraped = JSON.parse(raw) as Array<{ username: string; posts: Post[] }>;
+      const all = scraped.flatMap((e) => e.posts);
+      const sorted = [...all]
+        .sort((a, b) => new Date(b.taken_at_date).getTime() - new Date(a.taken_at_date).getTime())
+        .slice(0, 10);
+      setRecentPosts(sorted);
+    } catch { /* ignore */ }
+  }, []);
+
+  if (posts.length === 0) return null;
+
+  return (
+    <div className="mt-6 rounded-lg border border-border bg-card">
+      <button
+        onClick={() => setCollapsed((c) => !c)}
+        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-secondary/30 transition-colors rounded-lg"
+      >
+        <span className="text-sm font-medium text-muted-foreground">
+          Recent Competitor Posts ({posts.length})
+        </span>
+        {collapsed
+          ? <ChevronDown size={15} className="text-muted-foreground" />
+          : <ChevronUp size={15} className="text-muted-foreground" />}
+      </button>
+
+      {!collapsed && (
+        <div className="px-4 pb-4 space-y-2">
+          {posts.map((post, i) => (
+            <div key={i} className="flex items-start gap-3 py-2 border-b border-border last:border-0">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-0.5">
+                  <span className="text-[10px] font-medium text-primary">@{post.username}</span>
+                  <span className={`text-[10px] px-1.5 py-0 rounded border ${
+                    post.media_name === "reel" ? "bg-primary/10 text-primary border-primary/20" :
+                    post.media_name === "album" ? "bg-blue-500/10 text-blue-400 border-blue-500/20" :
+                    "bg-zinc-700/30 text-zinc-400 border-zinc-600/20"
+                  }`}>
+                    {post.media_name}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground ml-auto shrink-0">
+                    {new Date(post.taken_at_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground line-clamp-1">
+                  {post.text.slice(0, 60)}{post.text.length > 60 ? "..." : ""}
+                </p>
+              </div>
+              <div className="text-right shrink-0 text-[10px] text-muted-foreground whitespace-nowrap">
+                <div>{post.like_count.toLocaleString()} likes</div>
+                <div>{post.comment_count} comments</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── AI Suggest Panel ─────────────────────────────────────────────────────────
 
 function AiSuggestPanel({
@@ -1007,7 +1397,7 @@ function AiSuggestPanel({
                       variant="outline"
                       className={cn("text-[10px] px-1.5 py-0 h-4 shrink-0", formatColors[idea.format])}
                     >
-                      {idea.format}
+                      {formatLabels[idea.format] || idea.format}
                     </Badge>
                   </div>
 
@@ -1228,7 +1618,8 @@ export function InstagramClient() {
     format: Format;
     status: Status;
     scheduledDate: string;
-  }>({ title: "", caption: "", format: "reel", status: "ideas", scheduledDate: "" });
+    scriptId: string;
+  }>({ title: "", caption: "", format: "reel", status: "ideas", scheduledDate: "", scriptId: "" });
   const [deleteConfirm, setDeleteConfirm] = useState(false);
 
   const [form, setForm] = useState<{
@@ -1237,13 +1628,18 @@ export function InstagramClient() {
     format: Format;
     status: Status;
     scheduledDate: string;
+    scriptId: string;
   }>({
     title: "",
     caption: "",
     format: "reel",
     status: "ideas",
     scheduledDate: "",
+    scriptId: "",
   });
+
+  // Saved scripts (for linking to board posts)
+  const { scripts: savedScripts, getById: getScriptById } = useScripts();
 
   // Lazy-load Supabase client only when configured
   async function getSupabase() {
@@ -1360,6 +1756,7 @@ export function InstagramClient() {
           format: form.format,
           status: form.status,
           scheduledDate: form.scheduledDate || undefined,
+          scriptId: form.scriptId || undefined,
         };
         setPosts((prev) => [...prev, newPost]);
       }
@@ -1371,13 +1768,14 @@ export function InstagramClient() {
         format: form.format,
         status: form.status,
         scheduledDate: form.scheduledDate || undefined,
+        scriptId: form.scriptId || undefined,
       };
       const updated = [...posts, newPost];
       setPosts(updated);
       saveToLocalStorage(updated);
     }
 
-    setForm({ title: "", caption: "", format: "reel", status: "ideas", scheduledDate: "" });
+    setForm({ title: "", caption: "", format: "reel", status: "ideas", scheduledDate: "", scriptId: "" });
     setAddOpen(false);
   }
 
@@ -1449,6 +1847,7 @@ export function InstagramClient() {
       format: post.format,
       status: post.status,
       scheduledDate: post.scheduledDate ?? "",
+      scriptId: post.scriptId ?? "",
     });
     setDeleteConfirm(false);
     setEditOpen(true);
@@ -1466,6 +1865,7 @@ export function InstagramClient() {
             format: editForm.format,
             status: editForm.status,
             scheduledDate: editForm.scheduledDate || undefined,
+            scriptId: editForm.scriptId || undefined,
           }
         : p
     );
@@ -1566,6 +1966,31 @@ export function InstagramClient() {
     }
   }
 
+  function addScriptToBoard(title: string, script: string, format: Format) {
+    const newPost: PostCard = {
+      id: generateId(),
+      title,
+      caption: script,
+      format,
+      status: "ideas",
+      createdAt: new Date().toISOString(),
+    };
+    const updated = [...posts, newPost];
+    setPosts(updated);
+    if (!useSupabase) saveToLocalStorage(updated);
+    if (useSupabase) {
+      getSupabase().then((sb) =>
+        sb.from("content_posts").insert({
+          title: newPost.title,
+          caption: newPost.caption,
+          format: newPost.format,
+          status: "idea",
+          scheduled_date: null,
+        })
+      ).catch(() => {/* silent */});
+    }
+  }
+
   // Don't render DnD until client-side to avoid hydration mismatch
   if (!mounted) {
     return (
@@ -1592,6 +2017,8 @@ export function InstagramClient() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
           <TabsList className="bg-secondary w-full sm:w-auto">
             <TabsTrigger value="board">Board</TabsTrigger>
+            <TabsTrigger value="scripts">Scripts</TabsTrigger>
+            <TabsTrigger value="script-generator">Script Generator</TabsTrigger>
             <TabsTrigger value="script-guide">Script Guide</TabsTrigger>
             <TabsTrigger value="hashtags">Hashtags</TabsTrigger>
           </TabsList>
@@ -1643,6 +2070,8 @@ export function InstagramClient() {
                         </SelectTrigger>
                         <SelectContent className="bg-popover border-border">
                           <SelectItem value="reel">Reel</SelectItem>
+                          <SelectItem value="ig-pc">IG - PC</SelectItem>
+                          <SelectItem value="ig-raw">IG - iOS/Raw</SelectItem>
                           <SelectItem value="post">Post</SelectItem>
                           <SelectItem value="album">Album</SelectItem>
                           <SelectItem value="story">Story</SelectItem>
@@ -1676,6 +2105,30 @@ export function InstagramClient() {
                       className="bg-input border-border"
                     />
                   </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1.5 block">Link Script (optional)</label>
+                    <Select
+                      value={form.scriptId || "__none__"}
+                      onValueChange={(v) => setForm((f) => ({ ...f, scriptId: !v || v === "__none__" ? "" : v }))}
+                    >
+                      <SelectTrigger className="bg-input border-border">
+                        <SelectValue placeholder="No script linked" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-popover border-border">
+                        <SelectItem value="__none__">No script linked</SelectItem>
+                        {savedScripts.map((s) => (
+                          <SelectItem key={s.id} value={s.id}>
+                            {s.title}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {savedScripts.length === 0 && (
+                      <p className="text-[11px] text-muted-foreground/60 mt-1">
+                        Create scripts in the Scripts tab to link them here.
+                      </p>
+                    )}
+                  </div>
                   <div className="flex justify-end gap-2 pt-1">
                     <Button variant="outline" onClick={() => setAddOpen(false)} className="border-border">
                       Cancel
@@ -1696,7 +2149,7 @@ export function InstagramClient() {
 
         {/* Edit/View Post Dialog */}
         <Dialog open={editOpen} onOpenChange={(open) => { setEditOpen(open); if (!open) { setDeleteConfirm(false); } }}>
-          <DialogContent className="bg-popover border-border w-full max-w-md mx-4 sm:mx-auto">
+          <DialogContent className="bg-popover border-border w-full max-w-md mx-4 sm:mx-auto max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Edit Post</DialogTitle>
             </DialogHeader>
@@ -1731,6 +2184,8 @@ export function InstagramClient() {
                       </SelectTrigger>
                       <SelectContent className="bg-popover border-border">
                         <SelectItem value="reel">Reel</SelectItem>
+                        <SelectItem value="ig-pc">IG - PC</SelectItem>
+                        <SelectItem value="ig-raw">IG - iOS/Raw</SelectItem>
                         <SelectItem value="post">Post</SelectItem>
                         <SelectItem value="album">Album</SelectItem>
                         <SelectItem value="story">Story</SelectItem>
@@ -1763,6 +2218,45 @@ export function InstagramClient() {
                     onChange={(e) => setEditForm((f) => ({ ...f, scheduledDate: e.target.value }))}
                     className="bg-input border-border"
                   />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1.5 block">Link Script (optional)</label>
+                  <Select
+                    value={editForm.scriptId || "__none__"}
+                    onValueChange={(v) => setEditForm((f) => ({ ...f, scriptId: !v || v === "__none__" ? "" : v }))}
+                  >
+                    <SelectTrigger className="bg-input border-border">
+                      <SelectValue placeholder="No script linked" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-popover border-border">
+                      <SelectItem value="__none__">No script linked</SelectItem>
+                      {savedScripts.map((s) => (
+                        <SelectItem key={s.id} value={s.id}>
+                          {s.title}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {editForm.scriptId && (() => {
+                    const linked = getScriptById(editForm.scriptId);
+                    if (!linked) {
+                      return (
+                        <p className="text-[11px] text-destructive/80 mt-1">
+                          Linked script no longer exists.
+                        </p>
+                      );
+                    }
+                    return (
+                      <div className="mt-2 bg-secondary/30 border border-border/50 rounded-md p-2 max-h-48 overflow-y-auto">
+                        <p className="text-[11px] text-muted-foreground mb-1">
+                          {linked.script.split("\n").length} lines · {linked.script.split(/\s+/).filter(Boolean).length} words
+                        </p>
+                        <pre className="text-[11px] font-mono text-foreground/80 whitespace-pre-wrap">
+                          {linked.script || "(empty script)"}
+                        </pre>
+                      </div>
+                    );
+                  })()}
                 </div>
                 {editPost.createdAt && (
                   <p className="text-[11px] text-muted-foreground/50">
@@ -1829,7 +2323,7 @@ export function InstagramClient() {
         <TabsContent value="board">
           {/* Kanban board with drag and drop */}
           <DragDropContext onDragEnd={handleDragEnd}>
-            <div className="flex gap-4 overflow-x-auto pb-4 snap-x">
+            <div className="flex gap-4 overflow-x-auto pb-4 snap-x" id="ig-kanban">
               {COLUMNS.map((col) => {
                 const colPosts = posts.filter((p) => p.status === col.key);
                 return (
@@ -1869,7 +2363,7 @@ export function InstagramClient() {
                                       if (!dragSnapshot.isDragging) openEdit(post);
                                     }}
                                   >
-                                    <CardContent className="p-3">
+                                    <CardContent className="p-3 max-h-[200px] overflow-hidden">
                                       <div className="flex items-start gap-2 mb-2">
                                         <div
                                           {...dragProvided.dragHandleProps}
@@ -1881,7 +2375,7 @@ export function InstagramClient() {
                                             className="text-muted-foreground/40 group-hover:text-muted-foreground/70 transition-colors"
                                           />
                                         </div>
-                                        <p className="text-sm font-medium leading-snug flex-1">{post.title}</p>
+                                        <p className="text-sm font-medium leading-snug flex-1 line-clamp-2">{post.title}</p>
                                       </div>
                                       {post.caption && (
                                         <p className="text-xs text-muted-foreground line-clamp-2 mb-2 ml-5">
@@ -1896,7 +2390,7 @@ export function InstagramClient() {
                                             formatColors[post.format]
                                           )}
                                         >
-                                          {post.format}
+                                          {formatLabels[post.format] || post.format}
                                         </Badge>
                                         {post.scheduledDate && (
                                           <span className="text-[10px] text-muted-foreground">
@@ -1952,6 +2446,17 @@ export function InstagramClient() {
               })}
             </div>
           </DragDropContext>
+
+          {/* Recent Competitor Posts */}
+          <RecentIgPosts />
+        </TabsContent>
+
+        <TabsContent value="scripts">
+          <ScriptsTab />
+        </TabsContent>
+
+        <TabsContent value="script-generator">
+          <IgScriptGenerator onAddToBoard={addScriptToBoard} />
         </TabsContent>
 
         <TabsContent value="script-guide">

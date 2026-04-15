@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -35,6 +35,8 @@ import {
   Check,
   Copy,
 } from "lucide-react";
+import type { YouTubeVideo } from "@/lib/youtube-competitor-data";
+import { YTScriptsTab } from "./scripts-tab";
 
 type VideoFormat = "short" | "long" | "live";
 type VideoStatus = "ideas" | "scripted" | "filming" | "published";
@@ -544,7 +546,24 @@ function VideoCardItem({
   onUpdate: (id: string, updates: Partial<VideoCard>) => void;
   onDelete: (id: string) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [form, setForm] = useState({ ...video });
+
+  function handleSave() {
+    onUpdate(video.id, {
+      title: form.title,
+      description: form.description,
+      format: form.format,
+      scheduledDate: form.scheduledDate,
+      url: form.url,
+    });
+    setEditOpen(false);
+  }
+
+  // Sync form when video prop changes (e.g. after drag)
+  useEffect(() => {
+    if (!editOpen) setForm({ ...video });
+  }, [video, editOpen]);
 
   return (
     <Draggable draggableId={video.id} index={index}>
@@ -552,25 +571,41 @@ function VideoCardItem({
         <div
           ref={provided.innerRef}
           {...provided.draggableProps}
-          className={cn(
-            "rounded-lg border border-border bg-card p-3 space-y-2 cursor-pointer select-none transition-shadow",
-            snapshot.isDragging && "shadow-lg ring-1 ring-primary/30 opacity-90"
-          )}
-          onClick={() => setExpanded((e) => !e)}
         >
-          {/* Drag handle + title row */}
-          <div className="flex items-start gap-2">
-            <div
-              {...provided.dragHandleProps}
-              className="mt-0.5 text-muted-foreground/40 hover:text-muted-foreground transition-colors shrink-0"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <GripVertical size={14} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium leading-snug truncate">{video.title}</p>
-              <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0 h-4", formatColors[video.format])}>
+          <Card
+            className={cn(
+              "bg-card border-border group cursor-pointer transition-all duration-150",
+              snapshot.isDragging && "opacity-80 shadow-lg ring-1 ring-primary/30 rotate-[0.5deg]"
+            )}
+            onClick={() => setEditOpen(true)}
+          >
+            <CardContent className="p-3 max-h-[200px] overflow-hidden">
+              {/* Drag handle + title row */}
+              <div className="flex items-start gap-2 mb-2">
+                <div
+                  {...provided.dragHandleProps}
+                  onClick={(e) => e.stopPropagation()}
+                  className="mt-0.5 shrink-0 cursor-grab active:cursor-grabbing"
+                >
+                  <GripVertical
+                    size={13}
+                    className="text-muted-foreground/40 group-hover:text-muted-foreground/70 transition-colors"
+                  />
+                </div>
+                <p className="text-sm font-medium leading-snug flex-1 line-clamp-2">{video.title}</p>
+              </div>
+
+              {video.description && (
+                <p className="text-xs text-muted-foreground line-clamp-2 mb-2 ml-5">
+                  {video.description}
+                </p>
+              )}
+
+              <div className="flex items-center justify-between ml-5 mb-2">
+                <Badge
+                  variant="outline"
+                  className={cn("text-[10px] px-1.5 py-0 h-4", formatColors[video.format])}
+                >
                   {video.format}
                 </Badge>
                 {video.scheduledDate && (
@@ -579,51 +614,93 @@ function VideoCardItem({
                   </span>
                 )}
               </div>
-            </div>
-            <button
-              onClick={(e) => { e.stopPropagation(); onDelete(video.id); }}
-              className="text-muted-foreground/30 hover:text-destructive transition-colors shrink-0 mt-0.5"
-            >
-              <Trash2 size={12} />
-            </button>
-          </div>
 
-          {/* Published metrics */}
-          {video.status === "published" && (video.views !== undefined || video.likes !== undefined) && (
-            <div className="flex items-center gap-3 text-xs border-t border-border pt-2">
-              {video.views !== undefined && (
-                <span className="text-muted-foreground">{video.views.toLocaleString()} views</span>
-              )}
-              {video.likes !== undefined && (
-                <span className="text-muted-foreground">{video.likes.toLocaleString()} likes</span>
-              )}
-              {video.url && (
-                <a
-                  href={video.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-primary hover:underline ml-auto"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  Watch
-                </a>
-              )}
-            </div>
-          )}
+              {/* Action buttons */}
+              <div className="flex items-center flex-wrap gap-1.5 ml-5" onClick={(e) => e.stopPropagation()}>
+                {video.status === "published" && (
+                  <LogResultsDialog video={video} onSave={(m) => onUpdate(video.id, m)} />
+                )}
+              </div>
 
-          {/* Action buttons */}
-          <div className="flex items-center gap-1.5 flex-wrap" onClick={(e) => e.stopPropagation()}>
-            {video.status === "published" && (
-              <LogResultsDialog video={video} onSave={(m) => onUpdate(video.id, m)} />
-            )}
-          </div>
+              {/* Published metrics */}
+              {video.status === "published" && video.views !== undefined && (
+                <div className="ml-5 mt-2 flex items-center gap-2 text-[10px] text-muted-foreground">
+                  <span>{video.views?.toLocaleString()} views</span>
+                  {video.likes !== undefined && (
+                    <span>{video.likes.toLocaleString()} likes</span>
+                  )}
+                  {video.comments !== undefined && (
+                    <span>{video.comments} comments</span>
+                  )}
+                  {video.url && (
+                    <a
+                      href={video.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:underline ml-auto"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      Watch
+                    </a>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
-          {/* Expanded description */}
-          {expanded && video.description && (
-            <p className="text-xs text-muted-foreground leading-relaxed border-t border-border pt-2">
-              {video.description}
-            </p>
-          )}
+          {/* Edit Dialog */}
+          <Dialog open={editOpen} onOpenChange={setEditOpen}>
+            <DialogContent className="max-w-md bg-card border-border" onClick={(e) => e.stopPropagation()}>
+              <DialogHeader>
+                <DialogTitle className="text-sm">Edit Video</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-3">
+                <Input
+                  placeholder="Title"
+                  value={form.title}
+                  onChange={(e) => setForm({ ...form, title: e.target.value })}
+                  className="bg-background border-border text-sm"
+                />
+                <Textarea
+                  placeholder="Description / script notes"
+                  value={form.description}
+                  onChange={(e) => setForm({ ...form, description: e.target.value })}
+                  rows={4}
+                  className="bg-background border-border text-sm resize-none"
+                />
+                <div className="grid grid-cols-2 gap-3">
+                  <Select value={form.format} onValueChange={(v) => setForm({ ...form, format: v as VideoFormat })}>
+                    <SelectTrigger className="bg-background border-border text-sm h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="short">Short</SelectItem>
+                      <SelectItem value="long">Long</SelectItem>
+                      <SelectItem value="live">Live</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    type="date"
+                    value={form.scheduledDate || ""}
+                    onChange={(e) => setForm({ ...form, scheduledDate: e.target.value })}
+                    className="bg-background border-border text-sm h-9"
+                  />
+                </div>
+                {video.status === "published" && (
+                  <Input
+                    placeholder="YouTube URL"
+                    value={form.url || ""}
+                    onChange={(e) => setForm({ ...form, url: e.target.value })}
+                    className="bg-background border-border text-sm"
+                  />
+                )}
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setEditOpen(false)} className="border-border">Cancel</Button>
+                  <Button size="sm" onClick={handleSave}>Save</Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
         </div>
       )}
     </Draggable>
@@ -733,6 +810,496 @@ function AddVideoDialog({ onAdd }: { onAdd: (video: VideoCard) => void }) {
   );
 }
 
+// ─── Script Generator ─────────────────────────────────────────────────────────
+
+type ContentPillar = "Authority" | "Tutorial" | "Behind the Scenes" | "Case Study";
+
+interface ScriptResult {
+  topic: string;
+  format: VideoFormat;
+  pillar: ContentPillar;
+  script: string;
+}
+
+function ScriptGenerator({ onAddToBoard }: { onAddToBoard: (title: string, script: string, format: VideoFormat) => void }) {
+  const [topic, setTopic] = useState("");
+  const [format, setFormat] = useState<VideoFormat>("long");
+  const [pillar, setPillar] = useState<ContentPillar>("Authority");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<ScriptResult | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  async function generate() {
+    if (!topic.trim()) return;
+    setLoading(true);
+    setResult(null);
+
+    const prompt = `You are a YouTube script architect. Generate a structured script outline for a ${format} video.
+
+Topic: ${topic}
+Content Pillar: ${pillar}
+Format: ${format === "short" ? "YouTube Short (<60 seconds)" : format === "long" ? "Long-form YouTube video" : "Live stream"}
+
+Output EXACTLY this format (no markdown headers, no bold, plain text only):
+
+HOOK (word-for-word, 5-7 seconds):
+"[Exact opening line the creator will say]"
+
+SECTION 1: [Header] (~[X] seconds)
+- bullet prompt
+- bullet prompt
+- bullet prompt
+
+SECTION 2: [Header] (~[X] seconds)
+- bullet prompt
+- bullet prompt
+- bullet prompt
+
+SECTION 3: [Header] (~[X] seconds)
+- bullet prompt
+- bullet prompt
+
+CTA (~15 seconds):
+- bullet prompt
+- bullet prompt
+
+${format === "short" ? "For a Short: 3 sections max, total ~45 seconds of content." : "For long-form: 4-6 sections, natural chapter flow."}
+Keep section bullet prompts concise — these are speaking cues, not full sentences.`;
+
+    try {
+      const res = await fetch("/api/suggest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          platform: "youtube",
+          competitorPosts: [],
+          previousTitles: [],
+          context: prompt,
+          mode: "script",
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json() as { ideas?: { scriptOutline?: string; title?: string }[]; script?: string; raw?: string };
+        // Try to extract script from various response shapes
+        const scriptText =
+          data.script ??
+          data.raw ??
+          data.ideas?.[0]?.scriptOutline ??
+          JSON.stringify(data, null, 2);
+        setResult({ topic: topic.trim(), format, pillar, script: scriptText });
+      } else {
+        setResult({
+          topic: topic.trim(),
+          format,
+          pillar,
+          script: `HOOK (word-for-word, 5-7 seconds):\n"[Could not generate — check API connection]"\n\nSECTION 1: [Your first section] (~60 seconds)\n- Your main point\n- Supporting detail\n\nCTA (~15 seconds):\n- Subscribe for more\n- Comment your thoughts`,
+        });
+      }
+    } catch {
+      setResult({
+        topic: topic.trim(),
+        format,
+        pillar,
+        script: `HOOK (word-for-word, 5-7 seconds):\n"[Could not generate — check API connection]"\n\nCTA (~15 seconds):\n- Subscribe for more`,
+      });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function copyScript() {
+    if (!result?.script) return;
+    navigator.clipboard.writeText(result.script).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  function addToBoard() {
+    if (!result) return;
+    onAddToBoard(result.topic, result.script, result.format);
+  }
+
+  return (
+    <div className="max-w-2xl space-y-4">
+      <Card className="bg-card border-border">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-medium">Generate Script Structure</CardTitle>
+          <p className="text-xs text-muted-foreground">Hook (word-for-word) + bullet-prompt sections — you fill in the details live</p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <label className="text-xs text-muted-foreground mb-1.5 block">Video Topic / Title</label>
+            <Input
+              placeholder="e.g. I built an AI agent that runs my entire agency"
+              value={topic}
+              onChange={(e) => setTopic(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && generate()}
+              className="bg-input border-border"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-muted-foreground mb-1.5 block">Format</label>
+              <Select value={format} onValueChange={(v) => setFormat(v as VideoFormat)}>
+                <SelectTrigger className="bg-input border-border">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-popover border-border">
+                  <SelectItem value="short">Short (&lt;60s)</SelectItem>
+                  <SelectItem value="long">Long-form</SelectItem>
+                  <SelectItem value="live">Live</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1.5 block">Content Pillar</label>
+              <Select value={pillar} onValueChange={(v) => setPillar(v as ContentPillar)}>
+                <SelectTrigger className="bg-input border-border">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-popover border-border">
+                  <SelectItem value="Authority">Authority</SelectItem>
+                  <SelectItem value="Tutorial">Tutorial</SelectItem>
+                  <SelectItem value="Behind the Scenes">Behind the Scenes</SelectItem>
+                  <SelectItem value="Case Study">Case Study</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <Button
+            onClick={generate}
+            disabled={loading || !topic.trim()}
+            className="bg-primary text-primary-foreground hover:bg-primary/90 w-full"
+          >
+            {loading ? (
+              <>
+                <Loader2 size={14} className="animate-spin mr-2" />
+                Generating...
+              </>
+            ) : (
+              <>
+                <Sparkles size={14} className="mr-2" />
+                Generate Script Structure
+              </>
+            )}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {result && (
+        <Card className="bg-card border-border">
+          <CardHeader className="pb-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <CardTitle className="text-sm font-medium">{result.topic}</CardTitle>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                    result.format === "short" ? "bg-primary/10 text-primary border-primary/20" :
+                    result.format === "long" ? "bg-blue-500/10 text-blue-400 border-blue-500/20" :
+                    "bg-purple-500/10 text-purple-400 border-purple-500/20"
+                  }`}>
+                    {result.format}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground">{result.pillar}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={copyScript}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium border border-border bg-secondary text-secondary-foreground hover:bg-secondary/80 transition-colors"
+                >
+                  {copied ? <Check size={12} /> : <Copy size={12} />}
+                  {copied ? "Copied" : "Copy"}
+                </button>
+                <button
+                  onClick={addToBoard}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+                >
+                  <PlusCircle size={12} />
+                  Add to Board
+                </button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <pre className="text-xs text-foreground/80 leading-relaxed whitespace-pre-wrap font-mono bg-secondary/30 rounded-lg p-4 overflow-x-auto">
+              {result.script}
+            </pre>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ─── Recent Competitor Videos ─────────────────────────────────────────────────
+
+function RecentYTVideos() {
+  const [collapsed, setCollapsed] = useState(true);
+  const [videos, setRecentVideos] = useState<YouTubeVideo[]>([]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("yt-scraped-data");
+      if (!raw) return;
+      const all = JSON.parse(raw) as YouTubeVideo[];
+      const sorted = [...all]
+        .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime())
+        .slice(0, 10);
+      setRecentVideos(sorted);
+    } catch { /* ignore */ }
+  }, []);
+
+  if (videos.length === 0) return null;
+
+  return (
+    <div className="mt-6 rounded-lg border border-border bg-card">
+      <button
+        onClick={() => setCollapsed((c) => !c)}
+        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-secondary/30 transition-colors rounded-lg"
+      >
+        <span className="text-sm font-medium text-muted-foreground">
+          Recent Competitor Videos ({videos.length})
+        </span>
+        {collapsed
+          ? <ChevronDown size={15} className="text-muted-foreground" />
+          : <ChevronUp size={15} className="text-muted-foreground" />}
+      </button>
+
+      {!collapsed && (
+        <div className="px-4 pb-4 space-y-2">
+          {videos.map((video, i) => (
+            <div key={i} className="flex items-start gap-3 py-2 border-b border-border last:border-0">
+              {video.thumbnailUrl && (
+                <img
+                  src={video.thumbnailUrl}
+                  alt=""
+                  className="w-20 h-12 object-cover rounded-md shrink-0"
+                />
+              )}
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium line-clamp-1 leading-snug">{video.title}</p>
+                <p className="text-[10px] text-red-400 mt-0.5">{video.channelName}</p>
+                <div className="flex items-center gap-2 mt-1 text-[10px] text-muted-foreground">
+                  <span>{video.viewCount.toLocaleString()} views</span>
+                  {video.publishedAt && (
+                    <span>
+                      {new Date(video.publishedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                    </span>
+                  )}
+                </div>
+              </div>
+              {video.url && (
+                <a
+                  href={video.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[10px] text-primary hover:underline shrink-0 mt-0.5"
+                >
+                  Watch
+                </a>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Tags Manager (IG-style pillar-based with AI generation) ─────────────────
+
+const YT_TAGS_KEY = "content-os-youtube-tags-v2";
+
+const DEFAULT_YT_TAG_SETS: Record<string, string[]> = {
+  "AI Automation": [
+    "ai automation", "n8n", "claude", "ai tools", "automation workflow",
+    "no-code automation", "business automation", "ai agent", "workflow automation",
+    "claude code",
+  ],
+  "Business & Agency": [
+    "online business", "solopreneur", "agency", "digital marketing",
+    "passive income", "entrepreneurship", "business systems", "make money online",
+    "ai agency", "saas",
+  ],
+  "Tech & Development": [
+    "coding", "developer tools", "ai coding", "python", "typescript",
+    "docker", "vps", "api", "programming", "tech tutorial",
+  ],
+};
+
+function TagsManager() {
+  const [sets, setSets] = useState<Record<string, string[]>>(DEFAULT_YT_TAG_SETS);
+  const [editingPillar, setEditingPillar] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const [copied, setCopied] = useState<string | null>(null);
+  const [generating, setGenerating] = useState<string | null>(null);
+  const [genError, setGenError] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(YT_TAGS_KEY);
+      if (stored) setSets(JSON.parse(stored) as Record<string, string[]>);
+    } catch { /* ignore */ }
+  }, []);
+
+  function saveSets(updated: Record<string, string[]>) {
+    setSets(updated);
+    try {
+      localStorage.setItem(YT_TAGS_KEY, JSON.stringify(updated));
+    } catch { /* ignore */ }
+  }
+
+  function startEdit(pillar: string) {
+    setEditingPillar(pillar);
+    setEditValue((sets[pillar] ?? []).join(", "));
+  }
+
+  function saveEdit(pillar: string) {
+    const tags = editValue
+      .split(/[\n,]+/)
+      .map((t) => t.trim().toLowerCase())
+      .filter((t) => t.length > 0);
+    saveSets({ ...sets, [pillar]: tags });
+    setEditingPillar(null);
+  }
+
+  async function copySet(pillar: string) {
+    try {
+      await navigator.clipboard.writeText((sets[pillar] ?? []).join(", "));
+      setCopied(pillar);
+      setTimeout(() => setCopied(null), 2000);
+    } catch { /* ignore */ }
+  }
+
+  async function copyAll() {
+    const allTags = Object.values(sets).flat().join(", ");
+    try {
+      await navigator.clipboard.writeText(allTags);
+      setCopied("all");
+      setTimeout(() => setCopied(null), 2000);
+    } catch { /* ignore */ }
+  }
+
+  async function generateForPillar(pillar: string) {
+    setGenerating(pillar);
+    setGenError(null);
+    try {
+      const res = await fetch("/api/hashtags", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pillar,
+          currentHashtags: sets[pillar],
+          platform: "youtube",
+        }),
+      });
+      const data = await res.json() as { hashtags?: string[]; error?: string };
+      if (!res.ok || data.error) {
+        setGenError(data.error ?? "Failed to generate tags");
+      } else if (data.hashtags) {
+        // Strip # prefix for YouTube tags
+        const cleaned = data.hashtags.map((t: string) => t.replace(/^#/, "").toLowerCase());
+        saveSets({ ...sets, [pillar]: cleaned });
+      }
+    } catch (err) {
+      setGenError(String(err));
+    } finally {
+      setGenerating(null);
+    }
+  }
+
+  const totalTags = Object.values(sets).flat().length;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs text-muted-foreground">
+            {totalTags} total tags across {Object.keys(sets).length} pillars
+            {totalTags > 500 && (
+              <span className="ml-2 text-yellow-500">YouTube allows up to 500 characters of tags</span>
+            )}
+          </p>
+        </div>
+        <button
+          onClick={copyAll}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border border-border bg-secondary hover:bg-secondary/70 transition-colors"
+        >
+          {copied === "all" ? <Check size={12} /> : <Copy size={12} />}
+          {copied === "all" ? "Copied All" : "Copy All"}
+        </button>
+      </div>
+
+      {genError && (
+        <p className="text-xs text-destructive bg-destructive/10 rounded px-3 py-2">{genError}</p>
+      )}
+
+      {Object.entries(sets).map(([pillar, tags]) => (
+        <div key={pillar} className="rounded-lg border border-border bg-card p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">{pillar}</p>
+              <p className="text-[11px] text-muted-foreground">{tags.length} tags</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => generateForPillar(pillar)}
+                disabled={generating === pillar}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium border border-primary/20 bg-primary/5 text-primary hover:bg-primary/15 transition-colors disabled:opacity-50"
+              >
+                {generating === pillar ? (
+                  <Loader2 size={11} className="animate-spin" />
+                ) : (
+                  <Sparkles size={11} />
+                )}
+                Generate
+              </button>
+              <button
+                onClick={() => copySet(pillar)}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium border border-border bg-secondary hover:bg-secondary/70 transition-colors"
+              >
+                {copied === pillar ? <Check size={11} /> : <Copy size={11} />}
+                {copied === pillar ? "Copied" : "Copy"}
+              </button>
+              <button
+                onClick={() => editingPillar === pillar ? saveEdit(pillar) : startEdit(pillar)}
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {editingPillar === pillar ? "Save" : "Edit"}
+              </button>
+            </div>
+          </div>
+
+          {editingPillar === pillar ? (
+            <Textarea
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              className="bg-input border-border resize-none font-mono text-xs"
+              rows={5}
+              placeholder="Comma-separated tags"
+            />
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {tags.map((tag) => (
+                <span
+                  key={tag}
+                  className="text-[11px] px-1.5 py-0.5 rounded bg-secondary text-muted-foreground font-mono"
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── Main Client ──────────────────────────────────────────────────────────────
 
 export function YouTubeClient() {
@@ -822,12 +1389,27 @@ export function YouTubeClient() {
     return acc;
   }, {} as Record<VideoStatus, number>);
 
+  function addScriptToBoard(title: string, script: string, format: VideoFormat) {
+    const video: VideoCard = {
+      id: generateId(),
+      title,
+      description: script,
+      format,
+      status: "ideas",
+      createdAt: new Date().toISOString(),
+    };
+    persist([video, ...videos]);
+  }
+
   return (
     <div className="p-4 md:p-6">
       <Tabs defaultValue="board">
         <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
           <TabsList>
             <TabsTrigger value="board">Board</TabsTrigger>
+            <TabsTrigger value="scripts">Scripts</TabsTrigger>
+            <TabsTrigger value="script-generator">Script Generator</TabsTrigger>
+            <TabsTrigger value="tags">Tags</TabsTrigger>
             <TabsTrigger value="script-guide">Script Guide</TabsTrigger>
           </TabsList>
           <div className="flex items-center gap-2">
@@ -890,6 +1472,24 @@ export function YouTubeClient() {
               })}
             </div>
           </DragDropContext>
+
+          {/* Recent Competitor Videos */}
+          <RecentYTVideos />
+        </TabsContent>
+
+        {/* Scripts tab */}
+        <TabsContent value="scripts">
+          <YTScriptsTab />
+        </TabsContent>
+
+        {/* Script Generator tab */}
+        <TabsContent value="script-generator">
+          <ScriptGenerator onAddToBoard={addScriptToBoard} />
+        </TabsContent>
+
+        {/* Tags tab */}
+        <TabsContent value="tags">
+          <TagsManager />
         </TabsContent>
 
         {/* Script Guide tab */}
