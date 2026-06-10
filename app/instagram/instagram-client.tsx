@@ -37,7 +37,10 @@ import {
   Loader2,
   BarChart2,
   Share2,
+  CopyPlus,
+  CalendarDays,
 } from "lucide-react";
+import { DuplicateToDialog } from "@/components/duplicate-to-dialog";
 import { getAllPosts } from "@/lib/competitor-data";
 import type { Post } from "@/lib/competitor-data";
 import { getSavedHooks } from "@/lib/hook-patterns";
@@ -64,6 +67,7 @@ interface PostCard {
   actual_shares?: number;
   post_url?: string;
   performance_notes?: string;
+  archived?: boolean;
 }
 
 interface VideoIdea {
@@ -1612,6 +1616,7 @@ export function InstagramClient() {
   // Edit dialog state
   const [editPost, setEditPost] = useState<PostCard | null>(null);
   const [editOpen, setEditOpen] = useState(false);
+  const [duplicateOpen, setDuplicateOpen] = useState(false);
   const [editForm, setEditForm] = useState<{
     title: string;
     caption: string;
@@ -1621,6 +1626,8 @@ export function InstagramClient() {
     scriptId: string;
   }>({ title: "", caption: "", format: "reel", status: "ideas", scheduledDate: "", scriptId: "" });
   const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [groupByDate, setGroupByDate] = useState(false);
+  const [dateFilter, setDateFilter] = useState<"all" | "dated" | "undated" | "archived">("all");
 
   const [form, setForm] = useState<{
     title: string;
@@ -1821,6 +1828,13 @@ export function InstagramClient() {
     } else {
       saveToLocalStorage(updated);
     }
+  }
+
+  function sortByScheduled<T extends { scheduledDate?: string }>(items: T[]): T[] {
+    if (!groupByDate) return items;
+    const scheduled = items.filter((c) => c.scheduledDate);
+    const unscheduled = items.filter((c) => !c.scheduledDate);
+    return [...scheduled, ...unscheduled];
   }
 
   // Drag and drop handler
@@ -2025,6 +2039,28 @@ export function InstagramClient() {
 
           <div className="flex items-center gap-2">
             <p className="text-sm text-muted-foreground">{posts.length} posts tracked</p>
+            <div className="flex items-center gap-1">
+              {(["all", "dated", "undated", "archived"] as const).map((f) => (
+                <Button
+                  key={f}
+                  variant={dateFilter === f ? "secondary" : "ghost"}
+                  size="sm"
+                  className="h-7 text-[11px] px-2.5"
+                  onClick={() => setDateFilter(f)}
+                >
+                  {f === "all" ? "All" : f === "dated" ? "Has date" : f === "undated" ? "No date" : "Archived"}
+                </Button>
+              ))}
+            </div>
+            <Button
+              variant={groupByDate ? "secondary" : "ghost"}
+              size="sm"
+              className="h-8 gap-1.5 text-xs"
+              onClick={() => setGroupByDate(!groupByDate)}
+            >
+              <CalendarDays size={13} />
+              {groupByDate ? "Grouped" : "Group by date"}
+            </Button>
             <AiSuggestPanel onUseIdea={addFromIdea} />
             <Dialog open={addOpen} onOpenChange={setAddOpen}>
               <DialogTrigger
@@ -2286,15 +2322,42 @@ export function InstagramClient() {
                       </Button>
                     </div>
                   ) : (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setDeleteConfirm(true)}
-                      className="h-7 text-xs px-2 text-muted-foreground hover:text-destructive"
-                    >
-                      <Trash2 size={12} className="mr-1" />
-                      Delete
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setDeleteConfirm(true)}
+                        className="h-7 text-xs px-2 text-muted-foreground hover:text-destructive"
+                      >
+                        <Trash2 size={12} className="mr-1" />
+                        Delete
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 text-xs px-2 text-muted-foreground"
+                        onClick={() => setDuplicateOpen(true)}
+                      >
+                        <CopyPlus size={12} className="mr-1" />
+                        Duplicate to...
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className={cn("h-7 text-xs px-2", editPost?.archived ? "text-orange-400" : "text-muted-foreground")}
+                        onClick={() => {
+                          if (editPost) {
+                            const updated = posts.map((p) => p.id === editPost.id ? { ...p, archived: !p.archived } : p);
+                            setPosts(updated);
+                            // Also persist to localStorage
+                            try { localStorage.setItem("content-os-instagram-posts", JSON.stringify(updated)); } catch {}
+                            setEditOpen(false);
+                          }
+                        }}
+                      >
+                        {editPost?.archived ? "Unarchive" : "Archive"}
+                      </Button>
+                    </div>
                   )}
                   <div className="flex gap-2">
                     <Button
@@ -2320,12 +2383,30 @@ export function InstagramClient() {
           </DialogContent>
         </Dialog>
 
+        {editPost && (
+          <DuplicateToDialog
+            open={duplicateOpen}
+            onOpenChange={setDuplicateOpen}
+            text={editPost.title + (editPost.caption ? "\n\n" + editPost.caption : "")}
+            currentBoard="instagram"
+          />
+        )}
+
         <TabsContent value="board">
           {/* Kanban board with drag and drop */}
           <DragDropContext onDragEnd={handleDragEnd}>
             <div className="flex gap-4 overflow-x-auto pb-4 snap-x" id="ig-kanban">
               {COLUMNS.map((col) => {
-                const colPosts = posts.filter((p) => p.status === col.key);
+                const colPosts = sortByScheduled(
+                  posts.filter((p) => p.status === col.key)
+                    .filter((p) => {
+                      if (dateFilter === "archived") return !!p.archived;
+                      if (p.archived) return false;
+                      if (dateFilter === "all") return true;
+                      if (dateFilter === "dated") return !!p.scheduledDate;
+                      return !p.scheduledDate;
+                    })
+                );
                 return (
                   <div key={col.key} className="min-w-[280px] snap-start flex-shrink-0 space-y-3 md:flex-1">
                     <div className="flex items-center justify-between">
@@ -2357,6 +2438,7 @@ export function InstagramClient() {
                                   <Card
                                     className={cn(
                                       "bg-card border-border group cursor-pointer transition-all duration-150",
+                                      post.scheduledDate && "ring-2 ring-orange-400",
                                       dragSnapshot.isDragging && "opacity-80 shadow-lg ring-1 ring-primary/30 rotate-[0.5deg]"
                                     )}
                                     onClick={() => {

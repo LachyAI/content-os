@@ -8,10 +8,42 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Copy, FileText, Maximize2, Minimize2, PlusCircle, Search, Sparkles, Trash2, Wand2 } from "lucide-react";
+import { Copy, FileText, LayoutGrid, Loader2, Maximize2, Minimize2, PlusCircle, Search, Sparkles, Trash2, Wand2 } from "lucide-react";
 import { useYTScripts, type YTSavedScript, type YTScriptFormat, type YTScriptDraft } from "@/lib/use-yt-scripts";
 import { ScriptEditor } from "../instagram/script-editor";
 import { SCRIPTING_KNOWLEDGE } from "@/lib/scripting-knowledge";
+
+// ─── Infographic Plan ──────────────────────────────────────────────────────────
+
+interface InfographicItem {
+  title: string;
+  section: string;
+  layout: string;
+  tool: "infographic-creator" | "excalidraw-diagram";
+}
+
+interface InfographicPlan {
+  scriptId: string;
+  items: InfographicItem[];
+  createdAt: string;
+}
+
+const INFOGRAPHIC_PLANS_KEY = "content-os-yt-infographic-plans";
+
+function loadPlans(): Record<string, InfographicPlan> {
+  try {
+    const raw = localStorage.getItem(INFOGRAPHIC_PLANS_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, InfographicPlan>) : {};
+  } catch { return {}; }
+}
+
+function savePlan(plan: InfographicPlan) {
+  const plans = loadPlans();
+  plans[plan.scriptId] = plan;
+  try { localStorage.setItem(INFOGRAPHIC_PLANS_KEY, JSON.stringify(plans)); } catch {}
+}
+
+// ─── Banned Phrases ────────────────────────────────────────────────────────────
 
 const BANNED_PHRASES = [
   "I spent X hours so you don't have to",
@@ -75,6 +107,83 @@ export function YTScriptsTab() {
   const [expanding, setExpanding] = useState(false);
   const [expandError, setExpandError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [plans, setPlans] = useState<Record<string, InfographicPlan>>({});
+  const [generatingPlan, setGeneratingPlan] = useState<string | null>(null);
+  const [planError, setPlanError] = useState<string | null>(null);
+
+  // Load plans on mount
+  useState(() => { setPlans(loadPlans()); });
+
+  async function handleGeneratePlan(script: YTSavedScript) {
+    if (!script.script.trim()) {
+      setPlanError("Script is empty — write or generate a script first.");
+      return;
+    }
+    setGeneratingPlan(script.id);
+    setPlanError(null);
+    try {
+      const res = await fetch("/api/suggest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "script",
+          platform: "youtube",
+          context: `You are a visual content planner for YouTube videos. Given a video script, create an infographic plan.
+
+The creator uses two tools:
+1. "infographic-creator" — for polished explainers: comparisons, step-by-step processes, lists, timelines, checklists
+2. "excalidraw-diagram" — for technical diagrams: system architecture, data flows, pipelines, concept maps, fan-out diagrams
+
+SCRIPT:
+${script.script}
+
+Generate 5-10 infographic items. Each item should cover a specific section of the script that benefits from a visual.
+
+Return ONLY a JSON array (no markdown, no explanation) with this exact format:
+[
+  {
+    "title": "Short descriptive title for this visual",
+    "section": "Which part of the script this covers",
+    "layout": "Detailed layout description: what elements to show, visual hierarchy, arrangement",
+    "tool": "infographic-creator" or "excalidraw-diagram"
+  }
+]
+
+Rules:
+- 5-10 items minimum
+- Every major concept or section should have a visual
+- Use infographic-creator for polished/marketing-style visuals
+- Use excalidraw-diagram for technical architecture/flow visuals
+- Layout descriptions should be specific enough to build from (mention exact elements, positions, groupings)
+- Return ONLY the JSON array, nothing else`,
+        }),
+      });
+      const data = await res.json() as { script?: string; error?: string };
+      if (!res.ok || data.error) {
+        setPlanError(data.error ?? `Error: ${res.status}`);
+        return;
+      }
+      const raw = (data.script ?? "").trim();
+      // Parse JSON from response (strip any markdown fences)
+      const jsonStr = raw.replace(/^```json?\n?/, "").replace(/\n?```$/, "").trim();
+      const items = JSON.parse(jsonStr) as InfographicItem[];
+      if (!Array.isArray(items) || items.length === 0) {
+        setPlanError("No infographic items returned. Try again.");
+        return;
+      }
+      const plan: InfographicPlan = {
+        scriptId: script.id,
+        items,
+        createdAt: new Date().toISOString(),
+      };
+      savePlan(plan);
+      setPlans((prev) => ({ ...prev, [script.id]: plan }));
+    } catch (err) {
+      setPlanError(`Failed: ${String(err)}`);
+    } finally {
+      setGeneratingPlan(null);
+    }
+  }
 
   async function handleGenerate() {
     if (!draft.rawIdea.trim()) {
@@ -528,6 +637,14 @@ NOTES FOR FILMING:
         </div>
       </div>
 
+      {/* Plan error */}
+      {planError && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-destructive/10 border border-destructive/20 text-xs text-destructive">
+          {planError}
+          <button onClick={() => setPlanError(null)} className="ml-auto text-destructive/60 hover:text-destructive">dismiss</button>
+        </div>
+      )}
+
       {/* Empty state */}
       {scripts.length === 0 ? (
         <Card className="bg-card border-border border-dashed">
@@ -591,6 +708,39 @@ NOTES FOR FILMING:
                   <pre className="text-[11px] font-mono text-foreground/70 whitespace-pre-wrap line-clamp-6 bg-secondary/30 rounded-md p-2 border border-border/50">
                     {preview || "(empty)"}
                   </pre>
+
+                  {/* Infographic Plan */}
+                  <div className="flex items-center gap-2 pt-1" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      onClick={() => handleGeneratePlan(s)}
+                      disabled={generatingPlan === s.id}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium border border-cyan-500/20 bg-cyan-500/5 text-cyan-400 hover:bg-cyan-500/15 transition-colors disabled:opacity-50"
+                    >
+                      {generatingPlan === s.id ? (
+                        <Loader2 size={10} className="animate-spin" />
+                      ) : (
+                        <LayoutGrid size={10} />
+                      )}
+                      {generatingPlan === s.id ? "Planning..." : plans[s.id] ? `${plans[s.id].items.length} Infographics` : "Generate Plan"}
+                    </button>
+                  </div>
+
+                  {plans[s.id] && (
+                    <div className="space-y-1 pt-1 border-t border-border/50">
+                      {plans[s.id].items.slice(0, 4).map((item, i) => (
+                        <div key={i} className="flex items-start gap-1.5 text-[10px]">
+                          <span className="text-muted-foreground/50 shrink-0">{i + 1}.</span>
+                          <span className="text-muted-foreground truncate">{item.title}</span>
+                          <span className={`shrink-0 px-1 rounded ${item.tool === "excalidraw-diagram" ? "bg-purple-500/10 text-purple-400" : "bg-cyan-500/10 text-cyan-400"}`}>
+                            {item.tool === "excalidraw-diagram" ? "excalidraw" : "infographic"}
+                          </span>
+                        </div>
+                      ))}
+                      {plans[s.id].items.length > 4 && (
+                        <p className="text-[10px] text-muted-foreground/40">+{plans[s.id].items.length - 4} more</p>
+                      )}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             );

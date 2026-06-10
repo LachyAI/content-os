@@ -7,11 +7,13 @@ export interface RawPost {
   comment_count: number;
   media_name: "reel" | "album" | "post";
   taken_at_date: string;
+  shortCode?: string;
 }
 
 export interface Post extends RawPost {
   username: string;
   hook: string;
+  postUrl?: string;
 }
 
 export interface CompetitorSummary {
@@ -37,6 +39,7 @@ const posts: Post[] = (competitorData as unknown as RawPost[]).map((item) => ({
   ...item,
   username: extractUsername(item.link_user),
   hook: extractHook(item.text),
+  postUrl: item.shortCode ? `https://www.instagram.com/p/${item.shortCode}/` : undefined,
 }));
 
 export function getAllPosts(): Post[] {

@@ -26,7 +26,8 @@ import type { CompetitorSummary, Post, RawPost } from "@/lib/competitor-data";
 import { getAllPosts, getCompetitors } from "@/lib/competitor-data";
 import type { YouTubeVideo, YouTubeChannelSummary } from "@/lib/youtube-competitor-data";
 import { DEFAULT_YT_CHANNELS, buildYouTubeSummaries } from "@/lib/youtube-competitor-data";
-import { ArrowUpDown, ExternalLink, Loader2, PlusCircle, RefreshCw, Trash2, Zap } from "lucide-react";
+import { ArrowUpDown, Bookmark, ExternalLink, Loader2, PlusCircle, RefreshCw, Trash2, Zap } from "lucide-react";
+import { usePinnedPosts } from "@/lib/use-pinned-posts";
 
 // ─── IG Persistence Keys ──────────────────────────────────────────────────────
 
@@ -111,9 +112,12 @@ function buildMergedCompetitors(
       ? Math.round(posts.reduce((s, p) => s + p.comment_count, 0) / posts.length)
       : 0;
     const formatCounts = { reel: 0, album: 0, post: 0 };
-    for (const p of posts) formatCounts[p.media_name]++;
+    for (const p of posts) {
+      const fmt = p.media_name;
+      if (fmt in formatCounts) formatCounts[fmt]++;
+    }
     const topFormat = (Object.entries(formatCounts) as [Post["media_name"], number][])
-      .sort((a, b) => b[1] - a[1])[0][0];
+      .sort((a, b) => b[1] - a[1])[0]?.[0] ?? "post";
     const sortedPosts = [...posts].sort(
       (a, b) => new Date(b.taken_at_date).getTime() - new Date(a.taken_at_date).getTime()
     );
@@ -123,10 +127,70 @@ function buildMergedCompetitors(
   return { competitors: result, scrapedMap };
 }
 
-// Convert raw API scrape response posts to our Post type
+// Convert raw API scrape response posts to our Post type.
+// Defensive: Apify actors return inconsistent field names and sometimes
+// null/missing engagement counts (e.g. accounts that hide likes — banks,
+// businesses). Normalize everything here so the render layer never crashes.
 function rawToPost(raw: RawPost): Post {
-  const username = extractUsernameFromLink(raw.link_user);
-  return { ...raw, username, hook: extractHookFromText(raw.text) };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const r = raw as any;
+
+  // link_user / ownerUsername / username fallbacks
+  const linkUser: string =
+    r.link_user ||
+    (r.ownerUsername ? `https://www.instagram.com/${r.ownerUsername}` : "") ||
+    (r.username ? `https://www.instagram.com/${r.username}` : "") ||
+    "";
+  const username = extractUsernameFromLink(linkUser) || r.ownerUsername || r.username || "unknown";
+
+  // Caption / text
+  const text: string = r.text ?? r.caption ?? "";
+
+  // Engagement counts (Apify uses likesCount/commentsCount; static uses like_count/comment_count)
+  const likeCount: number = Number(r.like_count ?? r.likesCount ?? r.likes ?? 0) || 0;
+  const commentCount: number = Number(r.comment_count ?? r.commentsCount ?? r.comments ?? 0) || 0;
+
+  // media_name / type → reel | album | post
+  const rawType: string = String(r.media_name ?? r.type ?? r.productType ?? "post").toLowerCase();
+  let mediaName: "reel" | "album" | "post" = "post";
+  if (rawType.includes("reel") || rawType === "video" || rawType === "clips") mediaName = "reel";
+  else if (rawType.includes("sidecar") || rawType.includes("album") || rawType.includes("carousel")) mediaName = "album";
+  else if (rawType.includes("image") || rawType.includes("photo") || rawType === "post") mediaName = "post";
+
+  // Date — fallback to epoch so sorts don't NaN
+  const takenAt: string =
+    r.taken_at_date ??
+    r.timestamp ??
+    r.takenAt ??
+    new Date(0).toISOString();
+
+  // Shortcode + URL
+  const sc: string | undefined = r.shortCode ?? r.shortcode ?? r.short_code ?? r.code ?? undefined;
+  const directUrl: string | undefined = r.url;
+  const postUrl = sc
+    ? `https://www.instagram.com/p/${sc}/`
+    : (directUrl && typeof directUrl === "string" && directUrl.includes("/p/"))
+      ? directUrl
+      : undefined;
+
+  return {
+    link_user: linkUser,
+    text,
+    like_count: likeCount,
+    comment_count: commentCount,
+    media_name: mediaName,
+    taken_at_date: takenAt,
+    username,
+    hook: extractHookFromText(text),
+    shortCode: typeof sc === "string" ? sc : undefined,
+    postUrl,
+  };
+}
+
+// Heal a Post that was persisted to localStorage before normalization existed.
+// Same logic as rawToPost but operates on the stored Post shape.
+function healPost(p: Post): Post {
+  return rawToPost(p as unknown as RawPost);
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -469,6 +533,7 @@ function AllPostsTable({ allPosts, competitors }: { allPosts: Post[]; competitor
   const [dateRange, setDateRange] = useState<DateRange>("all");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+  const { isPinned, togglePin } = usePinnedPosts();
 
   const filteredPosts = useMemo(() => {
     const now = Date.now();
@@ -596,13 +661,16 @@ function AllPostsTable({ allPosts, competitors }: { allPosts: Post[]; competitor
                 <span className="flex items-center gap-1">Eng. <ArrowUpDown size={11} className="text-muted-foreground" /></span>
               </TableHead>
               <TableHead className="text-xs w-10"></TableHead>
+              <TableHead className="text-xs w-10"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {pagedPosts.map((post, i) => (
               <TableRow key={i} className="border-border hover:bg-secondary/30">
-                <TableCell className="text-xs text-primary font-medium whitespace-nowrap">
-                  @{post.username}
+                <TableCell className="text-xs font-medium whitespace-nowrap">
+                  <a href={`https://www.instagram.com/${post.username}/`} target="_blank" rel="noopener noreferrer" className="text-primary hover:text-primary/70 hover:underline transition-colors">
+                    @{post.username}
+                  </a>
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                   {formatDate(post.taken_at_date)}
@@ -615,13 +683,27 @@ function AllPostsTable({ allPosts, competitors }: { allPosts: Post[]; competitor
                     {post.media_name}
                   </Badge>
                 </TableCell>
-                <TableCell className="text-sm font-medium">{post.like_count.toLocaleString()}</TableCell>
-                <TableCell className="text-sm text-muted-foreground">{post.comment_count}</TableCell>
-                <TableCell className="text-xs text-muted-foreground">{(post.like_count + post.comment_count).toLocaleString()}</TableCell>
+                <TableCell className="text-sm font-medium">{(post.like_count ?? 0).toLocaleString()}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">{post.comment_count ?? 0}</TableCell>
+                <TableCell className="text-xs text-muted-foreground">{((post.like_count ?? 0) + (post.comment_count ?? 0)).toLocaleString()}</TableCell>
                 <TableCell>
-                  <a href={post.link_user} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-primary transition-colors">
+                  <a href={post.postUrl ?? post.link_user} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-primary transition-colors" title={post.postUrl ? "View post" : "View profile"}>
                     <ExternalLink size={13} />
                   </a>
+                </TableCell>
+                <TableCell>
+                  <button
+                    onClick={() => togglePin(post)}
+                    title={isPinned(post) ? "Unpin post" : "Pin post"}
+                    className={cn(
+                      "transition-colors",
+                      isPinned(post)
+                        ? "text-primary hover:text-primary/70"
+                        : "text-muted-foreground hover:text-primary"
+                    )}
+                  >
+                    <Bookmark size={13} fill={isPinned(post) ? "currentColor" : "none"} />
+                  </button>
                 </TableCell>
               </TableRow>
             ))}
@@ -685,10 +767,51 @@ function CompetitorsTab({
   const [scraping, setScraping] = useState<string | null>(null);
   const [scrapeResult, setScrapeResult] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"by-competitor" | "all-posts">("by-competitor");
+  const { isPinned, togglePin } = usePinnedPosts();
+
+  async function pollScrapeResult(runId: string, label: string, usernames: string[]) {
+    const maxAttempts = 60; // 5 min max (5s intervals)
+    for (let i = 0; i < maxAttempts; i++) {
+      await new Promise((r) => setTimeout(r, 5000));
+      try {
+        const res = await fetch(`/api/scrape/status?runId=${runId}`);
+        const data = await res.json();
+        if (data.status === "SUCCEEDED") {
+          const now = new Date().toISOString();
+          const rawPosts = (data.posts ?? []) as RawPost[];
+          const byUser = new Map<string, Post[]>();
+          for (const raw of rawPosts) {
+            const post = rawToPost(raw);
+            const list = byUser.get(post.username) ?? [];
+            list.push(post);
+            byUser.set(post.username, list);
+          }
+          for (const [uname, posts] of byUser.entries()) {
+            onScrapeSaved(uname, posts, now);
+          }
+          // Also save any usernames that returned 0 posts with updated timestamp
+          for (const u of usernames) {
+            if (!byUser.has(u)) onScrapeSaved(u, [], now);
+          }
+          setScrapeResult(`${data.count ?? rawPosts.length} posts scraped`);
+          return;
+        }
+        if (data.status !== "RUNNING") {
+          setScrapeResult(`Error: ${data.error ?? data.status}`);
+          return;
+        }
+        setScrapeResult(`Scraping ${label}... (${i * 5}s)`);
+      } catch (err) {
+        setScrapeResult(`Error polling: ${String(err)}`);
+        return;
+      }
+    }
+    setScrapeResult("Scrape timed out after 5 minutes");
+  }
 
   async function scrapeAll() {
     setScraping("all");
-    setScrapeResult(null);
+    setScrapeResult("Starting scrape...");
     try {
       const usernames = competitors.map((c) => c.username);
       const res = await fetch("/api/scrape", {
@@ -699,22 +822,9 @@ function CompetitorsTab({
       const data = await res.json();
       if (!res.ok) {
         setScrapeResult(`Error: ${data.error ?? "Unknown error"}`);
-      } else {
-        const now = new Date().toISOString();
-        const rawPosts = (data.posts ?? []) as RawPost[];
-        // Group by username and persist each
-        const byUser = new Map<string, Post[]>();
-        for (const raw of rawPosts) {
-          const post = rawToPost(raw);
-          const list = byUser.get(post.username) ?? [];
-          list.push(post);
-          byUser.set(post.username, list);
-        }
-        for (const [uname, posts] of byUser.entries()) {
-          onScrapeSaved(uname, posts, now);
-        }
-        setScrapeResult(`${data.count ?? rawPosts.length} posts scraped`);
+        return;
       }
+      await pollScrapeResult(data.runId, `${usernames.length} competitors`, usernames);
     } catch (err) {
       setScrapeResult(`Error: ${String(err)}`);
     } finally {
@@ -724,7 +834,7 @@ function CompetitorsTab({
 
   async function scrapeOne(username: string) {
     setScraping(username);
-    setScrapeResult(null);
+    setScrapeResult("Starting scrape...");
     try {
       const res = await fetch("/api/scrape", {
         method: "POST",
@@ -734,13 +844,9 @@ function CompetitorsTab({
       const data = await res.json();
       if (!res.ok) {
         setScrapeResult(`Error: ${data.error ?? "Unknown error"}`);
-      } else {
-        const now = new Date().toISOString();
-        const rawPosts = (data.posts ?? []) as RawPost[];
-        const posts = rawPosts.map(rawToPost);
-        onScrapeSaved(username, posts, now);
-        setScrapeResult(`${posts.length} posts scraped for @${username}`);
+        return;
       }
+      await pollScrapeResult(data.runId, `@${username}`, [username]);
     } catch (err) {
       setScrapeResult(`Error: ${String(err)}`);
     } finally {
@@ -760,8 +866,8 @@ function CompetitorsTab({
     return [...selectedComp.posts]
       .filter((p) => {
         if (formatFilter !== "all" && p.media_name !== formatFilter) return false;
-        if (cutoff > 0 && new Date(p.taken_at_date).getTime() < cutoff) return false;
-        if (search && !p.text.toLowerCase().includes(search.toLowerCase())) return false;
+        if (cutoff > 0 && p.taken_at_date && new Date(p.taken_at_date).getTime() < cutoff) return false;
+        if (search && !(p.text ?? "").toLowerCase().includes(search.toLowerCase())) return false;
         return true;
       })
       .sort((a, b) => {
@@ -855,12 +961,12 @@ function CompetitorsTab({
                 <div>
                   <label className="text-sm text-muted-foreground mb-1.5 block">Instagram Username</label>
                   <Input
-                    placeholder="e.g. charlieautomates"
+                    placeholder="e.g. charlieautomates or instagram.com/charlieautomates"
                     value={newUsername}
                     onChange={(e) => setNewUsername(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") {
-                        const h = newUsername.trim().replace(/^@/, "");
+                        const h = newUsername.trim().replace(/^@/, "").replace(/^https?:\/\/(www\.)?instagram\.com\//, "").replace(/\/.*$/, "");
                         if (h) onScrapeSaved(h, [], "");
                         setNewUsername("");
                         setAddOpen(false);
@@ -877,7 +983,7 @@ function CompetitorsTab({
                   <Button
                     className="bg-primary text-primary-foreground hover:bg-primary/90"
                     onClick={() => {
-                      const h = newUsername.trim().replace(/^@/, "");
+                      const h = newUsername.trim().replace(/^@/, "").replace(/^https?:\/\/(www\.)?instagram\.com\//, "").replace(/\/.*$/, "");
                       if (h) onScrapeSaved(h, [], "");
                       setNewUsername("");
                       setAddOpen(false);
@@ -957,7 +1063,7 @@ function CompetitorsTab({
                         >
                           top: {comp.topFormat}
                         </Badge>
-                        {isFresh ? (
+                        {isFresh && scrapedAt ? (
                           <span className="text-[10px] text-primary/70">
                             scraped {new Date(scrapedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                           </span>
@@ -1062,6 +1168,7 @@ function CompetitorsTab({
                         <span className="flex items-center gap-1">Eng. <ArrowUpDown size={11} className="text-muted-foreground" /></span>
                       </TableHead>
                       <TableHead className="text-xs w-10"></TableHead>
+                      <TableHead className="text-xs w-10"></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1078,13 +1185,27 @@ function CompetitorsTab({
                             {post.media_name}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-sm font-medium">{post.like_count.toLocaleString()}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{post.comment_count}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{(post.like_count + post.comment_count).toLocaleString()}</TableCell>
+                        <TableCell className="text-sm font-medium">{(post.like_count ?? 0).toLocaleString()}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{post.comment_count ?? 0}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{((post.like_count ?? 0) + (post.comment_count ?? 0)).toLocaleString()}</TableCell>
                         <TableCell>
-                          <a href={post.link_user} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-primary transition-colors">
+                          <a href={post.postUrl ?? post.link_user} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-primary transition-colors" title={post.postUrl ? "View post" : "View profile"}>
                             <ExternalLink size={13} />
                           </a>
+                        </TableCell>
+                        <TableCell>
+                          <button
+                            onClick={() => togglePin(post)}
+                            title={isPinned(post) ? "Unpin post" : "Pin post"}
+                            className={cn(
+                              "transition-colors",
+                              isPinned(post)
+                                ? "text-primary hover:text-primary/70"
+                                : "text-muted-foreground hover:text-primary"
+                            )}
+                          >
+                            <Bookmark size={13} fill={isPinned(post) ? "currentColor" : "none"} />
+                          </button>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -1121,6 +1242,280 @@ function CompetitorsTab({
           )}
         </>
       )}
+    </div>
+  );
+}
+
+// ─── YouTube Analysis Helpers ─────────────────────────────────────────────────
+
+const YT_STOP_WORDS = new Set([
+  "the","a","an","is","are","was","were","be","been","have","has","do","does","to",
+  "of","in","for","on","with","at","by","and","or","it","this","that","i","my","me",
+  "we","our","you","your","he","him","she","her","they","them","what","how","when",
+  "why","where","will","can","could","should","would","just","from","as","into","all",
+  "out","up","but","if","so","more","no","not","only","get","use","make","want","know",
+  "also","one","two","its","dont","im","via","new","now",
+]);
+
+const YT_DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function ytExtractKeywords(videos: YouTubeVideo[]): { word: string; count: number }[] {
+  const freq = new Map<string, number>();
+  for (const v of videos) {
+    const words = v.title
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter((w) => w.length > 2 && !YT_STOP_WORDS.has(w));
+    for (const w of words) {
+      freq.set(w, (freq.get(w) ?? 0) + 1);
+    }
+  }
+  return Array.from(freq.entries())
+    .map(([word, count]) => ({ word, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 20);
+}
+
+function ytBestUploadDays(videos: YouTubeVideo[]): { day: string; avgViews: number; count: number }[] {
+  const dayData: { total: number; count: number }[] = Array.from({ length: 7 }, () => ({ total: 0, count: 0 }));
+  for (const v of videos) {
+    if (!v.publishedAt) continue;
+    const d = new Date(v.publishedAt).getDay();
+    dayData[d].total += v.viewCount;
+    dayData[d].count++;
+  }
+  return dayData
+    .map((d, i) => ({
+      day: YT_DAY_NAMES[i],
+      avgViews: d.count > 0 ? Math.round(d.total / d.count) : 0,
+      count: d.count,
+    }))
+    .sort((a, b) => b.avgViews - a.avgViews);
+}
+
+function ytFormatPerformance(videos: YouTubeVideo[]): { format: string; avgViews: number; avgLikes: number; count: number }[] {
+  const data: Record<string, { views: number; likes: number; count: number }> = {
+    shorts: { views: 0, likes: 0, count: 0 },
+    long: { views: 0, likes: 0, count: 0 },
+    live: { views: 0, likes: 0, count: 0 },
+  };
+  for (const v of videos) {
+    const key = !v.duration ? "long" : v.duration < 60 ? "shorts" : "long";
+    data[key].views += v.viewCount;
+    data[key].likes += v.likeCount;
+    data[key].count++;
+  }
+  return Object.entries(data)
+    .map(([format, d]) => ({
+      format,
+      avgViews: d.count > 0 ? Math.round(d.views / d.count) : 0,
+      avgLikes: d.count > 0 ? Math.round(d.likes / d.count) : 0,
+      count: d.count,
+    }))
+    .sort((a, b) => b.avgViews - a.avgViews);
+}
+
+function ytTitleLengthInsights(videos: YouTubeVideo[]) {
+  const sorted = [...videos].sort((a, b) => b.viewCount - a.viewCount);
+  const topHalf = sorted.slice(0, Math.floor(sorted.length / 2));
+  const bottomHalf = sorted.slice(Math.floor(sorted.length / 2));
+  const avgLen = (arr: YouTubeVideo[]) =>
+    arr.length > 0
+      ? Math.round(arr.reduce((s, v) => s + v.title.length, 0) / arr.length)
+      : 0;
+  const avgViews = (arr: YouTubeVideo[]) =>
+    arr.length > 0
+      ? Math.round(arr.reduce((s, v) => s + v.viewCount, 0) / arr.length)
+      : 0;
+  return {
+    topAvgLen: avgLen(topHalf),
+    bottomAvgLen: avgLen(bottomHalf),
+    topAvgViews: avgViews(topHalf),
+    bottomAvgViews: avgViews(bottomHalf),
+  };
+}
+
+// ─── YouTube Analysis Tab ──────────────────────────────────────────────────────
+
+function YouTubeAnalysisTab({ videos, summaries }: { videos: YouTubeVideo[]; summaries: YouTubeChannelSummary[] }) {
+  const keywords = useMemo(() => ytExtractKeywords(videos), [videos]);
+  const days = useMemo(() => ytBestUploadDays(videos), [videos]);
+  const formats = useMemo(() => ytFormatPerformance(videos), [videos]);
+  const titleInsights = useMemo(() => ytTitleLengthInsights(videos), [videos]);
+
+  const maxKw = keywords[0]?.count ?? 1;
+  const maxDay = days[0]?.avgViews ?? 1;
+  const maxFmtViews = formats[0]?.avgViews ?? 1;
+  const maxChannelViews = Math.max(...summaries.map((s) => s.avgViews), 1);
+
+  const ytFormatColors: Record<string, string> = {
+    shorts: "bg-primary/15 text-primary border-primary/20",
+    long: "bg-blue-500/15 text-blue-400 border-blue-500/20",
+    live: "bg-purple-500/15 text-purple-400 border-purple-500/20",
+  };
+
+  if (videos.length === 0) {
+    return (
+      <div className="rounded-lg border border-border bg-card p-8 text-center text-sm text-muted-foreground">
+        No YouTube data yet — go to the Competitors tab and click Scrape All to fetch video data.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Row 1: Keywords */}
+      <Card className="bg-card border-border">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-medium">Top 20 Keywords</CardTitle>
+          <p className="text-xs text-muted-foreground">Most used words across all video titles</p>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-1.5">
+            {keywords.map(({ word, count }) => (
+              <div key={word} className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground w-4 text-right">{count}</span>
+                <div className="flex-1 relative h-5 flex items-center">
+                  <div
+                    className="absolute left-0 h-full rounded-sm bg-red-500/20"
+                    style={{ width: `${(count / maxKw) * 100}%` }}
+                  />
+                  <span className="relative text-xs font-mono px-1.5">{word}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Row 2: Best Upload Days + Format Performance */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card className="bg-card border-border">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium">Best Upload Days</CardTitle>
+            <p className="text-xs text-muted-foreground">Average views by day of week</p>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {days.map(({ day, avgViews, count }, i) => (
+                <div key={day} className="flex items-center gap-3">
+                  <span className={cn("text-xs font-medium w-6", i === 0 && "text-red-400")}>{day}</span>
+                  <div className="flex-1 h-5 relative flex items-center">
+                    <div
+                      className={cn("absolute left-0 h-full rounded-sm", i === 0 ? "bg-red-500/30" : "bg-secondary")}
+                      style={{ width: `${(avgViews / maxDay) * 100}%` }}
+                    />
+                    <span className="relative text-xs px-1.5">{avgViews.toLocaleString()}</span>
+                  </div>
+                  <span className="text-[10px] text-muted-foreground w-14 text-right">{count} videos</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-card border-border">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium">Format Performance</CardTitle>
+            <p className="text-xs text-muted-foreground">Avg views per format (Shorts &lt;60s / Long / Live)</p>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {formats.map(({ format, avgViews, avgLikes, count }) => (
+                <div key={format}>
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-2">
+                      <Badge
+                        variant="outline"
+                        className={`text-[10px] px-1.5 py-0 h-4 ${ytFormatColors[format] ?? ""}`}
+                      >
+                        {format}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">{count} videos</span>
+                    </div>
+                    <span className="text-sm font-semibold">{avgViews.toLocaleString()} avg views</span>
+                  </div>
+                  <div className="w-full h-1.5 rounded-full bg-secondary">
+                    <div
+                      className="h-full rounded-full bg-red-500/40"
+                      style={{ width: `${(avgViews / maxFmtViews) * 100}%` }}
+                    />
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-0.5 text-right">{avgLikes.toLocaleString()} avg likes</p>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Row 3: Title Length Insights + Channel Comparison */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card className="bg-card border-border">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium">Title Length vs Views</CardTitle>
+            <p className="text-xs text-muted-foreground">Top 50% vs bottom 50% performers by views</p>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <div className="flex items-center gap-6">
+                <div>
+                  <p className="text-2xl font-bold text-red-400">{titleInsights.topAvgLen}</p>
+                  <p className="text-xs text-muted-foreground">Top performers avg title chars</p>
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-muted-foreground">{titleInsights.bottomAvgLen}</p>
+                  <p className="text-xs text-muted-foreground">Bottom performers avg title chars</p>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {titleInsights.topAvgLen > titleInsights.bottomAvgLen
+                  ? `Top videos use ${titleInsights.topAvgLen - titleInsights.bottomAvgLen} more title characters on average — longer titles correlate with higher views.`
+                  : titleInsights.topAvgLen < titleInsights.bottomAvgLen
+                    ? `Top videos have shorter titles by ${titleInsights.bottomAvgLen - titleInsights.topAvgLen} chars — concise titles correlate with higher views.`
+                    : "Title length shows no clear correlation with view performance."}
+              </p>
+              <div className="grid grid-cols-2 gap-3 pt-1 border-t border-border">
+                <div>
+                  <p className="text-sm font-semibold">{titleInsights.topAvgViews.toLocaleString()}</p>
+                  <p className="text-xs text-muted-foreground">Avg views (top half)</p>
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-muted-foreground">{titleInsights.bottomAvgViews.toLocaleString()}</p>
+                  <p className="text-xs text-muted-foreground">Avg views (bottom half)</p>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-card border-border">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium">Avg Views per Channel</CardTitle>
+            <p className="text-xs text-muted-foreground">Which competitor gets the most average views</p>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {[...summaries].sort((a, b) => b.avgViews - a.avgViews).map((s, i) => (
+                <div key={s.channelId} className="flex items-center gap-3">
+                  <span className={cn("text-xs font-medium w-28 truncate shrink-0", i === 0 ? "text-red-400" : "text-muted-foreground")}>
+                    {s.channelName}
+                  </span>
+                  <div className="flex-1 h-5 relative flex items-center">
+                    <div
+                      className={cn("absolute left-0 h-full rounded-sm", i === 0 ? "bg-red-500/30" : "bg-secondary")}
+                      style={{ width: `${(s.avgViews / maxChannelViews) * 100}%` }}
+                    />
+                    <span className="relative text-xs px-1.5">{s.avgViews.toLocaleString()}</span>
+                  </div>
+                  <span className="text-[10px] text-muted-foreground w-12 text-right shrink-0">{s.videoCount} vids</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
@@ -1248,6 +1643,17 @@ function YouTubeTab() {
   }
 
   return (
+    <Tabs defaultValue="competitors">
+      <TabsList className="mb-6">
+        <TabsTrigger value="competitors">Competitors</TabsTrigger>
+        <TabsTrigger value="analysis">Analysis</TabsTrigger>
+      </TabsList>
+
+      <TabsContent value="analysis">
+        <YouTubeAnalysisTab videos={videos} summaries={summaries} />
+      </TabsContent>
+
+      <TabsContent value="competitors">
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -1443,6 +1849,8 @@ function YouTubeTab() {
         <p className="text-sm text-muted-foreground">No videos yet for {selectedSummary.channelName}. Run Scrape All to fetch data.</p>
       )}
     </div>
+      </TabsContent>
+    </Tabs>
   );
 }
 
@@ -1456,9 +1864,29 @@ export function CompetitorsClient({ competitors: staticCompetitors }: Props) {
   const [scrapedEntries, setScrapedEntries] = useState<ScrapedEntry[]>([]);
   const [mounted, setMounted] = useState(false);
 
-  // Load from localStorage on mount
+  // Load from localStorage on mount and self-heal stale entries.
+  // Older scraped data may have null/missing engagement counts (e.g. accounts
+  // that hide likes), which used to crash the post tables. healPost normalizes.
   useEffect(() => {
-    setScrapedEntries(loadScrapedData());
+    const loaded = loadScrapedData();
+    let dirty = false;
+    const healed: ScrapedEntry[] = loaded.map((entry) => {
+      const healedPosts = (entry.posts ?? []).map((p) => {
+        const fixed = healPost(p);
+        if (
+          fixed.like_count !== p.like_count ||
+          fixed.comment_count !== p.comment_count ||
+          fixed.media_name !== p.media_name ||
+          fixed.taken_at_date !== p.taken_at_date
+        ) {
+          dirty = true;
+        }
+        return fixed;
+      });
+      return { ...entry, posts: healedPosts };
+    });
+    if (dirty) saveScrapedData(healed);
+    setScrapedEntries(healed);
     setMounted(true);
   }, []);
 
@@ -1473,11 +1901,19 @@ export function CompetitorsClient({ competitors: staticCompetitors }: Props) {
   );
 
   function handleScrapeSaved(username: string, posts: Post[], scrapedAt: string) {
+    // Deduplicate posts by shortCode or text
+    const seen = new Set<string>();
+    const dedupedPosts = posts.filter((p) => {
+      const key = p.shortCode ?? p.hook ?? p.text?.slice(0, 80) ?? "";
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
     setScrapedEntries((prev) => {
       const filtered = prev.filter((e) => e.username !== username);
       const next = [...filtered];
-      if (posts.length > 0) {
-        next.push({ username, posts, scrapedAt });
+      if (dedupedPosts.length > 0) {
+        next.push({ username, posts: dedupedPosts, scrapedAt });
       } else {
         next.push({ username, posts: [], scrapedAt: "" });
       }

@@ -1,12 +1,9 @@
 import type { NextRequest } from "next/server";
 
-export const maxDuration = 120; // seconds — allows 2-min polling window on Vercel Pro+
-
 const ACTOR_ID =
   "scraping_solutions~instagram-profile-posts-scraper-no-cookies";
-const POLL_INTERVAL_MS = 3000;
-const TIMEOUT_MS = 110_000; // slightly under maxDuration to return a clean error
 
+// POST: Start an Apify run and return runId immediately (no polling)
 export async function POST(request: NextRequest) {
   const token = process.env.APIFY_TOKEN;
   if (!token) {
@@ -25,7 +22,6 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "usernames array required" }, { status: 400 });
   }
 
-  // Start the actor run
   const startRes = await fetch(
     `https://api.apify.com/v2/acts/${ACTOR_ID}/runs?token=${token}`,
     {
@@ -49,51 +45,5 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "No runId in Apify response" }, { status: 502 });
   }
 
-  // Poll until SUCCEEDED or FAILED
-  const deadline = Date.now() + TIMEOUT_MS;
-  let datasetId: string | null = null;
-
-  while (Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-
-    const statusRes = await fetch(
-      `https://api.apify.com/v2/actor-runs/${runId}?token=${token}`
-    );
-    if (!statusRes.ok) continue;
-
-    const statusData = await statusRes.json();
-    const status: string = statusData.data?.status;
-
-    if (status === "SUCCEEDED") {
-      datasetId = statusData.data?.defaultDatasetId ?? null;
-      break;
-    }
-    if (status === "FAILED" || status === "ABORTED" || status === "TIMED-OUT") {
-      return Response.json(
-        { error: `Apify run ${status.toLowerCase()}`, runId },
-        { status: 502 }
-      );
-    }
-  }
-
-  if (!datasetId) {
-    return Response.json(
-      { error: "Timed out waiting for Apify run", runId },
-      { status: 504 }
-    );
-  }
-
-  // Fetch dataset items
-  const itemsRes = await fetch(
-    `https://api.apify.com/v2/datasets/${datasetId}/items?token=${token}`
-  );
-  if (!itemsRes.ok) {
-    return Response.json(
-      { error: `Failed to fetch dataset: ${itemsRes.status}` },
-      { status: 502 }
-    );
-  }
-
-  const items = await itemsRes.json();
-  return Response.json({ count: items.length, posts: items });
+  return Response.json({ runId, status: "RUNNING" });
 }

@@ -21,8 +21,9 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { ChevronLeft, ChevronRight, PlusCircle, Download } from "lucide-react";
+import { DatePicker } from "@/components/ui/date-picker";
 
-type Format = "reel" | "post" | "album" | "story";
+type Format = "reel" | "post" | "album" | "story" | "yt-short" | "yt-long" | "yt-live" | "x-post" | "fb-post" | "li-post";
 type Status = "ideas" | "scripted" | "filming" | "posted";
 type DbStatus = "idea" | "scripted" | "filming" | "posted";
 
@@ -34,9 +35,16 @@ interface PostCard {
   status: Status;
   scheduledDate?: string;
   createdAt?: string;
+  platform?: "instagram" | "youtube" | "x-threads" | "fb-groups" | "fb-personal" | "linkedin";
 }
 
-const STORAGE_KEY = "content-os-instagram-posts";
+const IG_STORAGE_KEY = "content-os-instagram-posts";
+const YT_STORAGE_KEY = "content-os-youtube-posts";
+const X_BOARD_STORAGE_KEY = "content-os-x-board-posts";
+const FB_BOARD_STORAGE_KEY = "content-os-fb-board-posts";
+const FBP_BOARD_STORAGE_KEY = "content-os-fb-personal-board-posts";
+const LI_BOARD_STORAGE_KEY = "content-os-linkedin-board-posts";
+const STORAGE_KEY = IG_STORAGE_KEY;
 
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
@@ -50,6 +58,12 @@ const formatColors: Record<Format, string> = {
   album: "bg-blue-500/80 text-white",
   post: "bg-zinc-500/80 text-white",
   story: "bg-green-500/80 text-white",
+  "yt-short": "bg-red-500/80 text-white",
+  "yt-long": "bg-red-700/80 text-white",
+  "yt-live": "bg-red-400/80 text-white",
+  "x-post": "bg-sky-500/80 text-white",
+  "fb-post": "bg-indigo-500/80 text-white",
+  "li-post": "bg-blue-600/80 text-white",
 };
 
 const formatDotColors: Record<string, string> = {
@@ -57,6 +71,12 @@ const formatDotColors: Record<string, string> = {
   album: "bg-blue-500",
   post: "bg-zinc-500",
   story: "bg-green-500",
+  "yt-short": "bg-red-500",
+  "yt-long": "bg-red-700",
+  "yt-live": "bg-red-400",
+  "x-post": "bg-sky-500",
+  "fb-post": "bg-indigo-500",
+  "li-post": "bg-blue-600",
 };
 
 const formatBadgeColors: Record<string, string> = {
@@ -64,6 +84,12 @@ const formatBadgeColors: Record<string, string> = {
   album: "bg-blue-500/15 text-blue-400 border-blue-500/20",
   post: "bg-zinc-700/40 text-zinc-400 border-zinc-600/30",
   story: "bg-purple-500/15 text-purple-400 border-purple-500/20",
+  "yt-short": "bg-red-500/15 text-red-400 border-red-500/20",
+  "yt-long": "bg-red-700/15 text-red-300 border-red-700/20",
+  "yt-live": "bg-red-400/15 text-red-300 border-red-400/20",
+  "x-post": "bg-sky-500/15 text-sky-400 border-sky-500/20",
+  "fb-post": "bg-indigo-500/15 text-indigo-400 border-indigo-500/20",
+  "li-post": "bg-blue-600/15 text-blue-300 border-blue-600/20",
 };
 
 function toDbStatus(status: Status): DbStatus {
@@ -142,11 +168,110 @@ export function CalendarClient() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  function loadBoardPosts(): PostCard[] {
+    const result: PostCard[] = [];
+    try {
+      const xStored = localStorage.getItem(X_BOARD_STORAGE_KEY);
+      if (xStored) {
+        const xCards = JSON.parse(xStored) as Record<string, unknown>[];
+        for (const p of xCards) {
+          if (!p.scheduledDate) continue;
+          const text = (p.text as string) || "";
+          result.push({
+            id: p.id as string,
+            title: text.slice(0, 80) + (text.length > 80 ? "…" : ""),
+            caption: text,
+            format: "x-post",
+            status: (p.status === "published" ? "posted" : p.status === "scheduled" ? "scripted" : "ideas") as Status,
+            scheduledDate: p.scheduledDate as string,
+            createdAt: p.createdAt as string | undefined,
+            platform: "x-threads",
+          });
+        }
+      }
+    } catch {}
+    try {
+      const fbStored = localStorage.getItem(FB_BOARD_STORAGE_KEY);
+      if (fbStored) {
+        const fbCards = JSON.parse(fbStored) as Record<string, unknown>[];
+        for (const p of fbCards) {
+          if (!p.scheduledDate) continue;
+          const text = (p.text as string) || "";
+          result.push({
+            id: p.id as string,
+            title: text.slice(0, 80) + (text.length > 80 ? "…" : ""),
+            caption: text,
+            format: "fb-post",
+            status: (p.status === "published" ? "posted" : p.status === "scheduled" ? "scripted" : "ideas") as Status,
+            scheduledDate: p.scheduledDate as string,
+            createdAt: p.createdAt as string | undefined,
+            platform: "fb-groups",
+          });
+        }
+      }
+    } catch {}
+    try {
+      const fbpStored = localStorage.getItem(FBP_BOARD_STORAGE_KEY);
+      if (fbpStored) {
+        const fbpCards = JSON.parse(fbpStored) as Record<string, unknown>[];
+        for (const p of fbpCards) {
+          if (!p.scheduledDate) continue;
+          const text = (p.text as string) || "";
+          result.push({
+            id: p.id as string,
+            title: text.slice(0, 80) + (text.length > 80 ? "…" : ""),
+            caption: text,
+            format: "fb-post",
+            status: (p.status === "published" ? "posted" : p.status === "scheduled" ? "scripted" : "ideas") as Status,
+            scheduledDate: p.scheduledDate as string,
+            createdAt: p.createdAt as string | undefined,
+            platform: "fb-personal",
+          });
+        }
+      }
+    } catch {}
+    try {
+      const liStored = localStorage.getItem(LI_BOARD_STORAGE_KEY);
+      if (liStored) {
+        const liCards = JSON.parse(liStored) as Record<string, unknown>[];
+        for (const p of liCards) {
+          if (!p.scheduledDate) continue;
+          const text = (p.text as string) || "";
+          result.push({
+            id: p.id as string,
+            title: text.slice(0, 80) + (text.length > 80 ? "…" : ""),
+            caption: text,
+            format: "li-post",
+            status: (p.status === "published" ? "posted" : p.status === "scheduled" ? "scripted" : "ideas") as Status,
+            scheduledDate: p.scheduledDate as string,
+            createdAt: p.createdAt as string | undefined,
+            platform: "linkedin",
+          });
+        }
+      }
+    } catch {}
+    return result;
+  }
+
   function loadFromLocalStorage() {
     try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        setPosts(JSON.parse(stored) as PostCard[]);
+      const igStored = localStorage.getItem(IG_STORAGE_KEY);
+      const ytStored = localStorage.getItem(YT_STORAGE_KEY);
+      const igPosts: PostCard[] = igStored ? (JSON.parse(igStored) as PostCard[]).map(p => ({ ...p, platform: "instagram" as const })) : [];
+      const ytPosts: PostCard[] = ytStored ? (JSON.parse(ytStored) as Record<string, unknown>[]).map((p) => ({
+        id: p.id as string,
+        title: p.title as string,
+        caption: (p.description as string) || "",
+        format: (p.format === "short" ? "yt-short" : p.format === "long" ? "yt-long" : p.format === "live" ? "yt-live" : "yt-long") as Format,
+        status: p.status as Status,
+        scheduledDate: p.scheduledDate as string | undefined,
+        createdAt: p.createdAt as string | undefined,
+        platform: "youtube" as const,
+      })) : [];
+      const boardPosts = loadBoardPosts();
+      const merged = [...igPosts, ...ytPosts, ...boardPosts];
+      if (merged.length > 0) {
+        setPosts(merged);
       }
     } catch {
       // ignore
@@ -161,10 +286,10 @@ export function CalendarClient() {
         .select("*")
         .order("created_at", { ascending: true });
       if (error) throw error;
-      if (data) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        setPosts(data.map((row: Record<string, any>) => fromDbRow(row)));
-      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const sbPosts = data ? data.map((row: Record<string, any>) => fromDbRow(row)) : [];
+      const boardPosts = loadBoardPosts();
+      setPosts([...sbPosts, ...boardPosts]);
     } catch {
       loadFromLocalStorage();
     }
@@ -351,8 +476,8 @@ export function CalendarClient() {
       </div>
 
       {/* Format legend */}
-      <div className="flex items-center gap-3 text-xs text-muted-foreground">
-        {(["reel", "album", "post", "story"] as Format[]).map((fmt) => (
+      <div className="flex items-center gap-3 flex-wrap text-xs text-muted-foreground">
+        {(["reel", "album", "post", "story", "yt-short", "yt-long", "yt-live", "x-post", "fb-post", "li-post"] as Format[]).map((fmt) => (
           <span key={fmt} className="flex items-center gap-1.5">
             <span className={cn("w-2 h-2 rounded-full", formatDotColors[fmt])} />
             {fmt}
@@ -640,11 +765,10 @@ export function CalendarClient() {
             </div>
             <div>
               <label className="text-xs text-muted-foreground mb-1.5 block">Scheduled Date</label>
-              <Input
-                type="date"
+              <DatePicker
                 value={form.scheduledDate}
-                onChange={(e) => setForm((f) => ({ ...f, scheduledDate: e.target.value }))}
-                className="bg-input border-border"
+                onChange={(v) => setForm((f) => ({ ...f, scheduledDate: v }))}
+                className="bg-input border-border w-full"
               />
             </div>
             <div className="flex justify-end gap-2 pt-1">

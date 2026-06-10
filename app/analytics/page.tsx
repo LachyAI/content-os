@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, type ReactNode } from "react";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import {
-  BarChart2, Loader2, TrendingUp, Heart, MessageCircle, Star,
+  BarChart2, Loader2, TrendingUp, Heart, MessageCircle, Star, Sparkles,
   Zap, Calendar, Film, Target, Lightbulb, RefreshCw, Eye, ThumbsUp,
 } from "lucide-react";
 import { getCompetitors, getAllPosts } from "@/lib/competitor-data";
@@ -18,6 +18,348 @@ import type { YouTubeVideo, YouTubeChannelSummary } from "@/lib/youtube-competit
 import { buildYouTubeSummaries, DEFAULT_YT_CHANNELS } from "@/lib/youtube-competitor-data";
 
 const YT_SCRAPED_KEY = "yt-scraped-data";
+const MY_YT_KEY = "content-os-my-youtube";
+const MY_YT_ANALYSIS_KEY = "content-os-my-youtube-analysis";
+
+// ─── Your Account Section ───────────────────────────────────────────────────
+
+function YourAccountSection() {
+  const [channelUrl, setChannelUrl] = useState("");
+  const [myVideos, setMyVideos] = useState<YouTubeVideo[]>([]);
+  const [analysis, setAnalysis] = useState<string>("");
+  const [scraping, setScraping] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(MY_YT_KEY);
+      if (saved) {
+        const data = JSON.parse(saved) as { url: string; videos: YouTubeVideo[] };
+        setChannelUrl(data.url);
+        setMyVideos(data.videos);
+      }
+      const savedAnalysis = localStorage.getItem(MY_YT_ANALYSIS_KEY);
+      if (savedAnalysis) setAnalysis(savedAnalysis);
+    } catch { /* ignore */ }
+  }, []);
+
+  async function handleScrape() {
+    if (!channelUrl.trim()) return;
+    setScraping(true);
+    setError("");
+    try {
+      const res = await fetch("/api/scrape-youtube", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channelUrls: [channelUrl.trim()] }),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error((errData as Record<string, string>).error || `HTTP ${res.status}`);
+      }
+      const data = await res.json() as { videos: YouTubeVideo[] };
+      setMyVideos(data.videos);
+      localStorage.setItem(MY_YT_KEY, JSON.stringify({ url: channelUrl.trim(), videos: data.videos }));
+      setAnalysis("");
+      localStorage.removeItem(MY_YT_ANALYSIS_KEY);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Scrape failed");
+    } finally {
+      setScraping(false);
+    }
+  }
+
+  async function handleAnalyze() {
+    if (myVideos.length === 0) return;
+    setAnalyzing(true);
+    try {
+      const topVideos = [...myVideos].sort((a, b) => b.viewCount - a.viewCount).slice(0, 15);
+      const bottomVideos = [...myVideos].sort((a, b) => a.viewCount - b.viewCount).slice(0, 5);
+      const totalViews = myVideos.reduce((s, v) => s + v.viewCount, 0);
+      const avgViews = Math.round(totalViews / myVideos.length);
+      const avgLikes = Math.round(myVideos.reduce((s, v) => s + v.likeCount, 0) / myVideos.length);
+      const shorts = myVideos.filter(v => v.duration > 0 && v.duration < 60);
+      const longForm = myVideos.filter(v => v.duration >= 60);
+
+      const prompt = `You are a YouTube growth strategist analyzing a creator's channel. Be specific and actionable.
+
+CHANNEL STATS:
+- ${myVideos.length} videos analyzed
+- Total views: ${totalViews.toLocaleString()}
+- Avg views: ${avgViews.toLocaleString()}
+- Avg likes: ${avgLikes.toLocaleString()}
+- Shorts: ${shorts.length} videos (avg ${shorts.length > 0 ? Math.round(shorts.reduce((s,v) => s+v.viewCount, 0)/shorts.length).toLocaleString() : 0} views)
+- Long-form: ${longForm.length} videos (avg ${longForm.length > 0 ? Math.round(longForm.reduce((s,v) => s+v.viewCount, 0)/longForm.length).toLocaleString() : 0} views)
+
+TOP PERFORMING (by views):
+${topVideos.map((v, i) => `${i+1}. "${v.title}" — ${v.viewCount.toLocaleString()} views, ${v.likeCount} likes, ${v.duration}s`).join("\n")}
+
+LOWEST PERFORMING:
+${bottomVideos.map((v, i) => `${i+1}. "${v.title}" — ${v.viewCount.toLocaleString()} views, ${v.likeCount} likes, ${v.duration}s`).join("\n")}
+
+Give exactly 6 recommendations in this format:
+1. **[Category]**: [Specific actionable recommendation with data to back it up]
+
+Categories to cover: Upload Frequency, Content Format, Title Strategy, What's Working, What to Stop, Next Video Idea`;
+
+      const res = await fetch("/api/suggest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt }),
+      });
+      if (!res.ok) throw new Error("Analysis failed");
+      const data = await res.json() as { result: string };
+      const result = data.result || "";
+      setAnalysis(result);
+      localStorage.setItem(MY_YT_ANALYSIS_KEY, result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Analysis failed");
+    } finally {
+      setAnalyzing(false);
+    }
+  }
+
+  const totalViews = myVideos.reduce((s, v) => s + v.viewCount, 0);
+  const avgViews = myVideos.length > 0 ? Math.round(totalViews / myVideos.length) : 0;
+  const avgLikes = myVideos.length > 0 ? Math.round(myVideos.reduce((s, v) => s + v.likeCount, 0) / myVideos.length) : 0;
+  const avgComments = myVideos.length > 0 ? Math.round(myVideos.reduce((s, v) => s + v.commentCount, 0) / myVideos.length) : 0;
+  const topVideo = myVideos.length > 0 ? [...myVideos].sort((a, b) => b.viewCount - a.viewCount)[0] : null;
+
+  return (
+    <Card className="bg-card border-border border-primary/20">
+      <CardHeader className="pb-3">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-md bg-primary/15 flex items-center justify-center">
+            <Star size={15} className="text-primary" />
+          </div>
+          <div>
+            <CardTitle className="text-sm font-medium">Your Account</CardTitle>
+            <p className="text-xs text-muted-foreground">Analyze your YouTube channel and get personalized growth recommendations</p>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Channel URL input */}
+        <div className="flex gap-2">
+          <Input
+            placeholder="https://www.youtube.com/@yourchannel"
+            value={channelUrl}
+            onChange={(e) => setChannelUrl(e.target.value)}
+            className="bg-background border-border text-sm flex-1"
+          />
+          <Button size="sm" onClick={handleScrape} disabled={scraping || !channelUrl.trim()}>
+            {scraping ? <><Loader2 size={14} className="animate-spin mr-1.5" />Scraping...</> : <><RefreshCw size={14} className="mr-1.5" />Fetch</>}
+          </Button>
+        </div>
+
+        {error && <p className="text-xs text-destructive">{error}</p>}
+
+        {/* Stats overview */}
+        {myVideos.length > 0 && (
+          <>
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+              <div className="rounded-lg border border-border bg-background/50 p-3">
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Videos</p>
+                <p className="text-lg font-semibold">{myVideos.length}</p>
+              </div>
+              <div className="rounded-lg border border-border bg-background/50 p-3">
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Total Views</p>
+                <p className="text-lg font-semibold">{totalViews.toLocaleString()}</p>
+              </div>
+              <div className="rounded-lg border border-border bg-background/50 p-3">
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Avg Views</p>
+                <p className="text-lg font-semibold">{avgViews.toLocaleString()}</p>
+              </div>
+              <div className="rounded-lg border border-border bg-background/50 p-3">
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Avg Likes</p>
+                <p className="text-lg font-semibold">{avgLikes.toLocaleString()}</p>
+              </div>
+              <div className="rounded-lg border border-border bg-background/50 p-3">
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Avg Comments</p>
+                <p className="text-lg font-semibold">{avgComments.toLocaleString()}</p>
+              </div>
+            </div>
+
+            {/* Top video highlight */}
+            {topVideo && (
+              <div className="flex items-center gap-3 rounded-lg border border-border bg-background/50 p-3">
+                {topVideo.thumbnailUrl && (
+                  <img src={topVideo.thumbnailUrl} alt="" className="w-24 h-14 object-cover rounded" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Best Performing Video</p>
+                  <p className="text-sm font-medium truncate">{topVideo.title}</p>
+                  <p className="text-xs text-muted-foreground">{topVideo.viewCount.toLocaleString()} views · {topVideo.likeCount.toLocaleString()} likes</p>
+                </div>
+              </div>
+            )}
+
+            {/* Analyze button */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleAnalyze}
+              disabled={analyzing}
+              className="border-primary/30 text-primary hover:bg-primary/10"
+            >
+              {analyzing ? <><Loader2 size={14} className="animate-spin mr-1.5" />Analyzing with Claude...</> : <><Sparkles size={14} className="mr-1.5" />Get Growth Recommendations</>}
+            </Button>
+
+            {/* AI Analysis results */}
+            {analysis && (
+              <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 space-y-2">
+                <div className="flex items-center gap-2 mb-3">
+                  <Sparkles size={14} className="text-primary" />
+                  <p className="text-sm font-medium">Growth Recommendations</p>
+                </div>
+                <div className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
+                  {analysis}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── YouTube Content Recommendations ─────────────────────────────────────────
+
+function YTContentRecommendations({
+  allVideos,
+  titleLengthAnalysis,
+  formatBreakdown,
+  uploadsByMonth,
+}: {
+  allVideos: YouTubeVideo[];
+  titleLengthAnalysis: { shortAvgViews: number; longAvgViews: number; shortCount: number; longCount: number };
+  formatBreakdown: {
+    shorts: YouTubeVideo[]; longForm: YouTubeVideo[];
+    shortsAvgViews: number; longFormAvgViews: number;
+    shortsAvgLikes: number; longFormAvgLikes: number;
+  };
+  uploadsByMonth: [string, number][];
+}) {
+  if (allVideos.length === 0) return null;
+
+  // Best time to upload — day of week with most uploads in top-performing videos
+  const top20pct = [...allVideos]
+    .sort((a, b) => b.viewCount - a.viewCount)
+    .slice(0, Math.max(1, Math.ceil(allVideos.length * 0.2)));
+
+  const dayOfWeekCounts: Record<string, { count: number; totalViews: number }> = {
+    Sun: { count: 0, totalViews: 0 }, Mon: { count: 0, totalViews: 0 },
+    Tue: { count: 0, totalViews: 0 }, Wed: { count: 0, totalViews: 0 },
+    Thu: { count: 0, totalViews: 0 }, Fri: { count: 0, totalViews: 0 },
+    Sat: { count: 0, totalViews: 0 },
+  };
+  const DOW_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  for (const v of top20pct) {
+    if (!v.publishedAt) continue;
+    const day = DOW_NAMES[new Date(v.publishedAt).getDay()];
+    dayOfWeekCounts[day].count++;
+    dayOfWeekCounts[day].totalViews += v.viewCount;
+  }
+  const bestDayEntry = Object.entries(dayOfWeekCounts)
+    .filter(([, d]) => d.count > 0)
+    .sort((a, b) => b[1].totalViews - a[1].totalViews)[0];
+
+  // Optimal title length
+  const titleLengthRec = titleLengthAnalysis.shortAvgViews > titleLengthAnalysis.longAvgViews
+    ? `Keep titles under 50 chars — short titles average ${titleLengthAnalysis.shortAvgViews.toLocaleString()} views vs ${titleLengthAnalysis.longAvgViews.toLocaleString()} for longer ones.`
+    : `Longer titles outperform — titles over 50 chars average ${titleLengthAnalysis.longAvgViews.toLocaleString()} views vs ${titleLengthAnalysis.shortAvgViews.toLocaleString()} for shorter ones.`;
+
+  // Format rec
+  const formatRec = formatBreakdown.shortsAvgViews > formatBreakdown.longFormAvgViews
+    ? `Shorts outperform long-form in this niche (${formatBreakdown.shortsAvgViews.toLocaleString()} vs ${formatBreakdown.longFormAvgViews.toLocaleString()} avg views). Prioritise Shorts.`
+    : formatBreakdown.longFormAvgViews > 0
+    ? `Long-form outperforms Shorts (${formatBreakdown.longFormAvgViews.toLocaleString()} vs ${formatBreakdown.shortsAvgViews.toLocaleString()} avg views). Invest in 10+ min videos.`
+    : null;
+
+  // Content gaps — top topics from top 20% that are underrepresented
+  const wordFreq = new Map<string, number>();
+  const stopWords = new Set(["the","a","an","is","are","was","were","to","of","in","for","on","with","at","by","and","or","it","this","that","you","i","my","me","we","our","your","do","get","can","will","not","just","have","be","but","if","so","as","how","what","when","where","why","who","use","using","make","way","know","like","all","more","also","one","up","out","no","about","into","how"]);
+  for (const v of top20pct) {
+    const words = v.title.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(w => w.length > 3 && !stopWords.has(w));
+    for (const w of words) wordFreq.set(w, (wordFreq.get(w) ?? 0) + 1);
+  }
+  const contentGaps = Array.from(wordFreq.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([word, count]) => `"${word}" (${count} top videos)`);
+
+  // Engagement patterns
+  const avgViewToLike = allVideos.length > 0
+    ? (allVideos.reduce((s, v) => s + (v.viewCount > 0 ? v.likeCount / v.viewCount : 0), 0) / allVideos.length * 100)
+    : 0;
+  const topVideoEngRate = top20pct.length > 0
+    ? (top20pct.reduce((s, v) => s + (v.viewCount > 0 ? v.likeCount / v.viewCount : 0), 0) / top20pct.length * 100)
+    : 0;
+
+  // Avg upload cadence
+  const avgUploadsPerMonth = uploadsByMonth.length > 0
+    ? Math.round(uploadsByMonth.reduce((s, [, c]) => s + c, 0) / uploadsByMonth.length * 10) / 10
+    : null;
+
+  const recs = [
+    bestDayEntry && {
+      icon: <Calendar size={13} className="text-primary shrink-0" />,
+      title: `Upload on ${bestDayEntry[0]}`,
+      detail: `Top-performing videos are published most on ${bestDayEntry[0]} (${bestDayEntry[1].count} of top 20% of videos). This is when the algorithm rewards your niche most.`,
+    },
+    {
+      icon: <Target size={13} className="text-primary shrink-0" />,
+      title: "Optimal title length",
+      detail: titleLengthRec,
+    },
+    formatRec && {
+      icon: <Film size={13} className="text-primary shrink-0" />,
+      title: "Format recommendation",
+      detail: formatRec,
+    },
+    contentGaps.length > 0 && {
+      icon: <Lightbulb size={13} className="text-primary shrink-0" />,
+      title: "Content gaps to exploit",
+      detail: `Top topics driving competitor views: ${contentGaps.join(", ")}. These are content opportunities you can replicate.`,
+    },
+    avgViewToLike > 0 && {
+      icon: <Zap size={13} className="text-primary shrink-0" />,
+      title: "Engagement benchmark",
+      detail: `Average like rate is ${avgViewToLike.toFixed(2)}% across all competitor videos. Top 20% average ${topVideoEngRate.toFixed(2)}%. Aim above ${topVideoEngRate.toFixed(1)}% to signal quality to the algorithm.${avgUploadsPerMonth ? ` Competitors post ~${avgUploadsPerMonth} videos/month.` : ""}`,
+    },
+  ].filter(Boolean) as { icon: ReactNode; title: string; detail: string }[];
+
+  return (
+    <Card className="bg-card border-border">
+      <CardHeader className="pb-3">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-md bg-primary/15 flex items-center justify-center shrink-0">
+            <Lightbulb size={14} className="text-primary" />
+          </div>
+          <div>
+            <CardTitle className="text-sm font-medium">Content Recommendations</CardTitle>
+            <p className="text-xs text-muted-foreground mt-0.5">Computed from {allVideos.length} competitor videos</p>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {recs.map((rec, i) => (
+            <div key={i} className="rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-1.5">
+              <div className="flex items-center gap-2">
+                {rec.icon}
+                <p className="text-xs font-semibold text-primary">{rec.title}</p>
+              </div>
+              <p className="text-[11px] text-muted-foreground leading-relaxed">{rec.detail}</p>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 // ─── YouTube Analytics ────────────────────────────────────────────────────────
 
@@ -62,6 +404,14 @@ function YouTubeAnalytics() {
     [allVideos]
   );
 
+  const top5Thumbnails = useMemo(
+    () => [...allVideos]
+      .filter((v) => v.thumbnailUrl)
+      .sort((a, b) => b.viewCount - a.viewCount)
+      .slice(0, 5),
+    [allVideos]
+  );
+
   // Views over time — group by month
   const viewsByMonth = useMemo(() => {
     const map = new Map<string, number>();
@@ -75,15 +425,77 @@ function YouTubeAnalytics() {
       .slice(-12);
   }, [allVideos]);
 
+  // Upload frequency — videos per month
+  const uploadsByMonth = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const v of allVideos) {
+      if (!v.publishedAt) continue;
+      const key = v.publishedAt.slice(0, 7);
+      map.set(key, (map.get(key) ?? 0) + 1);
+    }
+    return Array.from(map.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .slice(-12);
+  }, [allVideos]);
+
+  // Engagement rate over time (avg per month)
+  const engRateByMonth = useMemo(() => {
+    const map = new Map<string, { total: number; count: number }>();
+    for (const v of allVideos) {
+      if (!v.publishedAt || !v.viewCount) continue;
+      const key = v.publishedAt.slice(0, 7);
+      const engRate = ((v.likeCount + v.commentCount) / v.viewCount) * 100;
+      const existing = map.get(key) ?? { total: 0, count: 0 };
+      map.set(key, { total: existing.total + engRate, count: existing.count + 1 });
+    }
+    return Array.from(map.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .slice(-12)
+      .map(([month, d]) => [month, d.count > 0 ? Math.round((d.total / d.count) * 100) / 100 : 0] as [string, number]);
+  }, [allVideos]);
+
+  // Title word count analysis
+  const titleLengthAnalysis = useMemo(() => {
+    const SHORT_TITLE = 50;
+    const shortTitles = allVideos.filter((v) => v.title.length <= SHORT_TITLE);
+    const longTitles = allVideos.filter((v) => v.title.length > SHORT_TITLE);
+    const avgViews = (arr: YouTubeVideo[]) =>
+      arr.length > 0 ? Math.round(arr.reduce((s, v) => s + v.viewCount, 0) / arr.length) : 0;
+    return {
+      shortAvgViews: avgViews(shortTitles),
+      longAvgViews: avgViews(longTitles),
+      shortCount: shortTitles.length,
+      longCount: longTitles.length,
+    };
+  }, [allVideos]);
+
   // Format breakdown: shorts (<60s) vs long-form
   const formatBreakdown = useMemo(() => {
     const shorts = allVideos.filter((v) => v.duration > 0 && v.duration < 60);
     const longForm = allVideos.filter((v) => v.duration >= 60);
     const unknown = allVideos.filter((v) => !v.duration);
-    return { shorts, longForm, unknown };
+    const avgViews = (arr: YouTubeVideo[]) =>
+      arr.length > 0 ? Math.round(arr.reduce((s, v) => s + v.viewCount, 0) / arr.length) : 0;
+    const avgLikes = (arr: YouTubeVideo[]) =>
+      arr.length > 0 ? Math.round(arr.reduce((s, v) => s + v.likeCount, 0) / arr.length) : 0;
+    const avgComments = (arr: YouTubeVideo[]) =>
+      arr.length > 0 ? Math.round(arr.reduce((s, v) => s + v.commentCount, 0) / arr.length) : 0;
+    return {
+      shorts,
+      longForm,
+      unknown,
+      shortsAvgViews: avgViews(shorts),
+      shortsAvgLikes: avgLikes(shorts),
+      shortsAvgComments: avgComments(shorts),
+      longFormAvgViews: avgViews(longForm),
+      longFormAvgLikes: avgLikes(longForm),
+      longFormAvgComments: avgComments(longForm),
+    };
   }, [allVideos]);
 
   const maxMonthViews = viewsByMonth.reduce((m, [, v]) => Math.max(m, v), 1);
+  const maxMonthUploads = uploadsByMonth.reduce((m, [, v]) => Math.max(m, v), 1);
+  const maxEngRate = engRateByMonth.reduce((m, [, v]) => Math.max(m, v), 0.01);
   const maxChannelViews = Math.max(...summaries.map((s) => s.avgViews), 1);
 
   function formatDuration(seconds: number): string {
@@ -118,6 +530,9 @@ function YouTubeAnalytics() {
 
   return (
     <div className="space-y-6">
+      {/* Your Account */}
+      <YourAccountSection />
+
       {/* Summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <Card className="bg-card border-border">
@@ -225,37 +640,64 @@ function YouTubeAnalytics() {
         </CardContent>
       </Card>
 
-      {/* Content format breakdown */}
+      {/* Shorts vs Long-form comparison */}
       <Card className="bg-card border-border">
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium">Content Format Breakdown</CardTitle>
-          <p className="text-xs text-muted-foreground">Shorts (&lt;60s) vs long-form across all competitors</p>
+          <CardTitle className="text-sm font-medium">Shorts vs Long-form Comparison</CardTitle>
+          <p className="text-xs text-muted-foreground">Side-by-side performance: Shorts (&lt;60s) vs Long-form (≥60s)</p>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-3 gap-4">
-            <div className="text-center">
-              <p className="text-2xl font-bold text-primary">{formatBreakdown.shorts.length}</p>
-              <p className="text-xs text-muted-foreground mb-1">Shorts (&lt;60s)</p>
-              {formatBreakdown.shorts.length > 0 && (
-                <p className="text-xs text-primary">
-                  avg {Math.round(formatBreakdown.shorts.reduce((s, v) => s + v.viewCount, 0) / formatBreakdown.shorts.length).toLocaleString()} views
-                </p>
-              )}
+          <div className="grid grid-cols-2 gap-6">
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-xs font-semibold px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
+                  Shorts (&lt;60s)
+                </span>
+                <span className="text-xs text-muted-foreground">{formatBreakdown.shorts.length} videos</span>
+              </div>
+              <div className="space-y-2">
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">Avg views</span>
+                  <span className="font-semibold">{formatBreakdown.shortsAvgViews.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">Avg likes</span>
+                  <span className="font-medium">{formatBreakdown.shortsAvgLikes.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">Avg comments</span>
+                  <span className="font-medium">{formatBreakdown.shortsAvgComments.toLocaleString()}</span>
+                </div>
+              </div>
             </div>
-            <div className="text-center">
-              <p className="text-2xl font-bold text-blue-400">{formatBreakdown.longForm.length}</p>
-              <p className="text-xs text-muted-foreground mb-1">Long-form (≥60s)</p>
-              {formatBreakdown.longForm.length > 0 && (
-                <p className="text-xs text-blue-400">
-                  avg {Math.round(formatBreakdown.longForm.reduce((s, v) => s + v.viewCount, 0) / formatBreakdown.longForm.length).toLocaleString()} views
-                </p>
-              )}
-            </div>
-            <div className="text-center">
-              <p className="text-2xl font-bold text-muted-foreground">{formatBreakdown.unknown.length}</p>
-              <p className="text-xs text-muted-foreground">Unknown duration</p>
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-xs font-semibold px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                  Long-form (≥60s)
+                </span>
+                <span className="text-xs text-muted-foreground">{formatBreakdown.longForm.length} videos</span>
+              </div>
+              <div className="space-y-2">
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">Avg views</span>
+                  <span className="font-semibold">{formatBreakdown.longFormAvgViews.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">Avg likes</span>
+                  <span className="font-medium">{formatBreakdown.longFormAvgLikes.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">Avg comments</span>
+                  <span className="font-medium">{formatBreakdown.longFormAvgComments.toLocaleString()}</span>
+                </div>
+              </div>
             </div>
           </div>
+          {formatBreakdown.unknown.length > 0 && (
+            <p className="text-[10px] text-muted-foreground mt-3 border-t border-border pt-2">
+              {formatBreakdown.unknown.length} videos have no duration data
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -311,6 +753,131 @@ function YouTubeAnalytics() {
           </table>
         </CardContent>
       </Card>
+
+      {/* Engagement rate over time */}
+      {engRateByMonth.length > 0 && (
+        <Card className="bg-card border-border">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium">Engagement Rate Over Time</CardTitle>
+            <p className="text-xs text-muted-foreground">Avg (likes + comments) / views % per month</p>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-end gap-1.5 h-32">
+              {engRateByMonth.map(([month, rate]) => (
+                <div key={month} className="flex-1 flex flex-col items-center gap-1">
+                  <span className="text-[9px] text-muted-foreground/70">{rate.toFixed(1)}%</span>
+                  <div
+                    className="w-full rounded-t-sm bg-red-400/40"
+                    style={{ height: `${Math.max(4, (rate / maxEngRate) * 96)}px` }}
+                  />
+                  <span className="text-[9px] text-muted-foreground rotate-45 origin-left translate-x-1 whitespace-nowrap overflow-hidden" style={{ maxWidth: "24px" }}>
+                    {month.slice(5)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Upload frequency */}
+      {uploadsByMonth.length > 0 && (
+        <Card className="bg-card border-border">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium">Upload Frequency</CardTitle>
+            <p className="text-xs text-muted-foreground">Videos published per month across all competitors</p>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-end gap-1.5 h-24">
+              {uploadsByMonth.map(([month, count]) => (
+                <div key={month} className="flex-1 flex flex-col items-center gap-1">
+                  <span className="text-[9px] text-muted-foreground/70">{count}</span>
+                  <div
+                    className="w-full rounded-t-sm bg-red-500/20"
+                    style={{ height: `${Math.max(4, (count / maxMonthUploads) * 72)}px` }}
+                  />
+                  <span className="text-[9px] text-muted-foreground rotate-45 origin-left translate-x-1 whitespace-nowrap overflow-hidden" style={{ maxWidth: "24px" }}>
+                    {month.slice(5)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Title word count vs views */}
+      <Card className="bg-card border-border">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-medium">Title Length vs Views</CardTitle>
+          <p className="text-xs text-muted-foreground">Short titles (≤50 chars) vs long titles (&gt;50 chars)</p>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-6">
+            <div>
+              <p className="text-2xl font-bold text-primary">{titleLengthAnalysis.shortAvgViews.toLocaleString()}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Avg views — short titles (≤50 chars)</p>
+              <p className="text-[11px] text-muted-foreground mt-1">{titleLengthAnalysis.shortCount} videos</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-muted-foreground">{titleLengthAnalysis.longAvgViews.toLocaleString()}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Avg views — long titles (&gt;50 chars)</p>
+              <p className="text-[11px] text-muted-foreground mt-1">{titleLengthAnalysis.longCount} videos</p>
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground mt-4 pt-3 border-t border-border">
+            {titleLengthAnalysis.shortAvgViews > titleLengthAnalysis.longAvgViews
+              ? `Short titles outperform long titles by ${((titleLengthAnalysis.shortAvgViews - titleLengthAnalysis.longAvgViews) / Math.max(titleLengthAnalysis.longAvgViews, 1) * 100).toFixed(0)}% on views.`
+              : titleLengthAnalysis.longAvgViews > titleLengthAnalysis.shortAvgViews
+                ? `Long titles outperform short titles by ${((titleLengthAnalysis.longAvgViews - titleLengthAnalysis.shortAvgViews) / Math.max(titleLengthAnalysis.shortAvgViews, 1) * 100).toFixed(0)}% on views.`
+                : "No significant difference between short and long titles."}
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* Content Recommendations */}
+      <YTContentRecommendations allVideos={allVideos} titleLengthAnalysis={titleLengthAnalysis} formatBreakdown={formatBreakdown} uploadsByMonth={uploadsByMonth} />
+
+      {/* Top performing thumbnails */}
+      {top5Thumbnails.length > 0 && (
+        <Card className="bg-card border-border">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium">Top 5 Performing Thumbnails</CardTitle>
+            <p className="text-xs text-muted-foreground">Highest view count videos with thumbnails</p>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 gap-3">
+              {top5Thumbnails.map((v, i) => (
+                <div key={i} className="flex items-center gap-3">
+                  <div className="shrink-0 relative">
+                    <img
+                      src={v.thumbnailUrl!}
+                      alt=""
+                      className="w-24 h-14 object-cover rounded-md"
+                    />
+                    <span className="absolute top-1 left-1 text-[9px] px-1 py-0.5 rounded bg-black/70 text-white font-medium">
+                      #{i + 1}
+                    </span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium truncate">{v.title}</p>
+                    <p className="text-[10px] text-red-400 mt-0.5">{v.channelName}</p>
+                    <div className="flex items-center gap-3 mt-1.5">
+                      <span className="text-xs font-semibold">{v.viewCount.toLocaleString()} views</span>
+                      <span className="text-xs text-muted-foreground">{v.likeCount.toLocaleString()} likes</span>
+                      {v.url && (
+                        <a href={v.url} target="_blank" rel="noopener noreferrer" className="text-[10px] text-primary hover:underline ml-auto shrink-0">
+                          Watch
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

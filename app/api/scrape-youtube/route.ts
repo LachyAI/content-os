@@ -1,10 +1,10 @@
 import type { NextRequest } from "next/server";
 
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 const ACTOR_ID = "streamers~youtube-scraper";
-const POLL_INTERVAL_MS = 3000;
-const TIMEOUT_MS = 110_000;
+const POLL_INTERVAL_MS = 5000;
+const TIMEOUT_MS = 240_000;
 
 export async function POST(request: NextRequest) {
   const token = process.env.APIFY_TOKEN;

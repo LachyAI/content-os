@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
+  Bookmark,
   LayoutDashboard,
   Users,
   Grid2X2,
@@ -14,19 +15,34 @@ import {
   Menu,
   X,
   PlayCircle,
+  Zap,
+  MessageSquare,
+  UsersRound,
+  Briefcase,
+  GitBranch,
 } from "lucide-react";
+import { usePinnedPosts } from "@/lib/use-pinned-posts";
 
 const navItems = [
   { label: "Home", href: "/", icon: LayoutDashboard },
   { label: "Competitors", href: "/competitors", icon: Users },
-  { label: "Instagram", href: "/instagram", icon: Grid2X2 },
+  { label: "Instagram Ai", href: "/instagram", icon: Grid2X2 },
   { label: "YouTube", href: "/youtube", icon: PlayCircle },
+  { label: "X / Threads", href: "/x-threads", icon: MessageSquare },
+  { label: "FB Groups", href: "/fb-groups", icon: UsersRound },
+  { label: "FB Personal", href: "/fb-personal", icon: Users },
+  { label: "FB Biz Page", href: "/fb-biz", icon: Users },
+  { label: "LinkedIn", href: "/linkedin", icon: Briefcase },
   { label: "Calendar", href: "/calendar", icon: CalendarDays },
+  { label: "Hooks", href: "/hooks", icon: Zap },
   { label: "Analytics", href: "/analytics", icon: BarChart2 },
+  { label: "Waterfall", href: "/waterfall", icon: GitBranch },
   { label: "News", href: "/news", icon: Newspaper },
 ];
 
 function NavItems({ pathname, onNavigate }: { pathname: string; onNavigate?: () => void }) {
+  const { pinnedCount, mounted } = usePinnedPosts();
+
   return (
     <>
       {navItems.map((item) => {
@@ -57,6 +73,34 @@ function NavItems({ pathname, onNavigate }: { pathname: string; onNavigate?: () 
           </Link>
         );
       })}
+
+      {/* Pinned nav item */}
+      {(() => {
+        const isActive = pathname.startsWith("/pinned");
+        return (
+          <Link
+            href="/pinned"
+            onClick={onNavigate}
+            className={cn(
+              "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors",
+              isActive
+                ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                : "text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
+            )}
+          >
+            <Bookmark
+              size={16}
+              className={cn(isActive ? "text-primary" : "text-muted-foreground")}
+            />
+            <span className="flex-1">Pinned</span>
+            {mounted && pinnedCount > 0 && (
+              <span className="ml-auto text-[10px] font-medium bg-primary/15 text-primary border border-primary/20 px-1.5 py-0.5 rounded-full leading-none">
+                {pinnedCount}
+              </span>
+            )}
+          </Link>
+        );
+      })()}
     </>
   );
 }

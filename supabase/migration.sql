@@ -45,6 +45,24 @@ ALTER TABLE content_posts ADD COLUMN IF NOT EXISTS actual_shares INTEGER;
 ALTER TABLE content_posts ADD COLUMN IF NOT EXISTS post_url TEXT;
 ALTER TABLE content_posts ADD COLUMN IF NOT EXISTS performance_notes TEXT;
 
+-- Transcribed reel scripts (knowledge bank)
+CREATE TABLE IF NOT EXISTS reel_scripts (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  username TEXT NOT NULL,
+  post_url TEXT UNIQUE,
+  caption TEXT,
+  transcript TEXT,
+  hook TEXT,
+  hook_type TEXT,
+  like_count INTEGER DEFAULT 0,
+  comment_count INTEGER DEFAULT 0,
+  view_count INTEGER DEFAULT 0,
+  engagement_rate REAL DEFAULT 0,
+  duration_seconds INTEGER,
+  transcribed_at TIMESTAMPTZ DEFAULT NOW(),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Enable RLS
 ALTER TABLE content_posts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE competitors ENABLE ROW LEVEL SECURITY;
@@ -54,3 +72,6 @@ ALTER TABLE competitor_posts ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow all on content_posts" ON content_posts FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all on competitors" ON competitors FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all on competitor_posts" ON competitor_posts FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE reel_scripts ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all on reel_scripts" ON reel_scripts FOR ALL USING (true) WITH CHECK (true);

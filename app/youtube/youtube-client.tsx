@@ -32,14 +32,17 @@ import {
   ChevronUp,
   Loader2,
   BarChart2,
+  CalendarDays,
   Check,
   Copy,
+  CopyPlus,
 } from "lucide-react";
+import { DuplicateToDialog } from "@/components/duplicate-to-dialog";
 import type { YouTubeVideo } from "@/lib/youtube-competitor-data";
 import { YTScriptsTab } from "./scripts-tab";
 
 type VideoFormat = "short" | "long" | "live";
-type VideoStatus = "ideas" | "scripted" | "filming" | "published";
+type VideoStatus = "ideas" | "scripted" | "infographics" | "filming" | "published";
 
 interface VideoCard {
   id: string;
@@ -49,11 +52,13 @@ interface VideoCard {
   status: VideoStatus;
   scheduledDate?: string;
   createdAt?: string;
+  infographicCount?: number;
   // Published performance
   views?: number;
   likes?: number;
   comments?: number;
   url?: string;
+  archived?: boolean;
 }
 
 interface VideoIdea {
@@ -77,6 +82,7 @@ const STORAGE_KEY = "content-os-youtube-posts";
 const COLUMNS: { key: VideoStatus; label: string }[] = [
   { key: "ideas", label: "Ideas" },
   { key: "scripted", label: "Scripted" },
+  { key: "infographics", label: "Infographics" },
   { key: "filming", label: "Filming" },
   { key: "published", label: "Published" },
 ];
@@ -547,6 +553,7 @@ function VideoCardItem({
   onDelete: (id: string) => void;
 }) {
   const [editOpen, setEditOpen] = useState(false);
+  const [duplicateOpen, setDuplicateOpen] = useState(false);
   const [form, setForm] = useState({ ...video });
 
   function handleSave() {
@@ -575,6 +582,7 @@ function VideoCardItem({
           <Card
             className={cn(
               "bg-card border-border group cursor-pointer transition-all duration-150",
+              video.scheduledDate && "ring-2 ring-orange-400",
               snapshot.isDragging && "opacity-80 shadow-lg ring-1 ring-primary/30 rotate-[0.5deg]"
             )}
             onClick={() => setEditOpen(true)}
@@ -602,12 +610,19 @@ function VideoCardItem({
               )}
 
               <div className="flex items-center justify-between ml-5 mb-2">
-                <Badge
-                  variant="outline"
-                  className={cn("text-[10px] px-1.5 py-0 h-4", formatColors[video.format])}
-                >
-                  {video.format}
-                </Badge>
+                <div className="flex items-center gap-1.5">
+                  <Badge
+                    variant="outline"
+                    className={cn("text-[10px] px-1.5 py-0 h-4", formatColors[video.format])}
+                  >
+                    {video.format}
+                  </Badge>
+                  {video.infographicCount !== undefined && video.infographicCount > 0 && (
+                    <span className="text-[10px] px-1.5 py-0 h-4 inline-flex items-center rounded-full border border-cyan-500/20 bg-cyan-500/10 text-cyan-400">
+                      {video.infographicCount} diagrams
+                    </span>
+                  )}
+                </div>
                 {video.scheduledDate && (
                   <span className="text-[10px] text-muted-foreground">
                     {formatDateShort(video.scheduledDate)}
@@ -694,13 +709,44 @@ function VideoCardItem({
                     className="bg-background border-border text-sm"
                   />
                 )}
-                <div className="flex justify-end gap-2">
-                  <Button variant="outline" size="sm" onClick={() => setEditOpen(false)} className="border-border">Cancel</Button>
-                  <Button size="sm" onClick={handleSave}>Save</Button>
+                <div className="flex items-center justify-between gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs px-2 text-muted-foreground"
+                    onClick={() => setDuplicateOpen(true)}
+                  >
+                    <CopyPlus size={12} className="mr-1" />
+                    Duplicate to...
+                  </Button>
+                  <div className="flex items-center justify-between gap-2 flex-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className={cn("gap-1.5 text-xs", video.archived ? "text-orange-400" : "text-muted-foreground")}
+                      onClick={() => {
+                        onUpdate(video.id, { archived: !video.archived });
+                        setEditOpen(false);
+                      }}
+                    >
+                      {video.archived ? "Unarchive" : "Archive"}
+                    </Button>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => setEditOpen(false)} className="border-border">Cancel</Button>
+                      <Button size="sm" onClick={handleSave}>Save</Button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </DialogContent>
           </Dialog>
+
+          <DuplicateToDialog
+            open={duplicateOpen}
+            onOpenChange={setDuplicateOpen}
+            text={video.title + (video.description ? "\n\n" + video.description : "")}
+            currentBoard="youtube"
+          />
         </div>
       )}
     </Draggable>
@@ -1305,6 +1351,8 @@ function TagsManager() {
 export function YouTubeClient() {
   const [videos, setVideos] = useState<VideoCard[]>([]);
   const [mounted, setMounted] = useState(false);
+  const [groupByDate, setGroupByDate] = useState(false);
+  const [dateFilter, setDateFilter] = useState<"all" | "dated" | "undated" | "archived">("all");
 
   useEffect(() => {
     try {
@@ -1347,6 +1395,13 @@ export function YouTubeClient() {
     persist([video, ...videos]);
   }
 
+  function sortByScheduled<T extends { scheduledDate?: string }>(items: T[]): T[] {
+    if (!groupByDate) return items;
+    const scheduled = items.filter((c) => c.scheduledDate);
+    const unscheduled = items.filter((c) => !c.scheduledDate);
+    return [...scheduled, ...unscheduled];
+  }
+
   function onDragEnd(result: DropResult) {
     if (!result.destination) return;
 
@@ -1357,7 +1412,7 @@ export function YouTubeClient() {
 
     if (srcCol === dstCol && srcIdx === dstIdx) return;
 
-    const colVideos = (col: VideoStatus) => videos.filter((v) => v.status === col);
+    const colVideos = (col: VideoStatus) => sortByScheduled(videos.filter((v) => v.status === col));
     const others = videos.filter((v) => v.status !== srcCol && v.status !== dstCol);
 
     if (srcCol === dstCol) {
@@ -1371,7 +1426,7 @@ export function YouTubeClient() {
       const [moved] = srcItems.splice(srcIdx, 1);
       const updated = { ...moved, status: dstCol };
       dstItems.splice(dstIdx, 0, updated);
-      const colOrder: VideoStatus[] = ["ideas", "scripted", "filming", "published"];
+      const colOrder: VideoStatus[] = ["ideas", "scripted", "infographics", "filming", "published"];
       const rebuild: VideoCard[] = [];
       for (const col of colOrder) {
         if (col === srcCol) rebuild.push(...srcItems);
@@ -1413,6 +1468,28 @@ export function YouTubeClient() {
             <TabsTrigger value="script-guide">Script Guide</TabsTrigger>
           </TabsList>
           <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 mr-2">
+              {(["all", "dated", "undated", "archived"] as const).map((f) => (
+                <Button
+                  key={f}
+                  variant={dateFilter === f ? "secondary" : "ghost"}
+                  size="sm"
+                  className="h-7 text-[11px] px-2.5"
+                  onClick={() => setDateFilter(f)}
+                >
+                  {f === "all" ? "All" : f === "dated" ? "Has date" : f === "undated" ? "No date" : "Archived"}
+                </Button>
+              ))}
+            </div>
+            <Button
+              variant={groupByDate ? "secondary" : "ghost"}
+              size="sm"
+              className="h-8 gap-1.5 text-xs"
+              onClick={() => setGroupByDate(!groupByDate)}
+            >
+              <CalendarDays size={13} />
+              {groupByDate ? "Grouped" : "Group by date"}
+            </Button>
             <AiIdeasPanel onUseIdea={useIdea} />
             <AddVideoDialog onAdd={addVideo} />
           </div>
@@ -1423,7 +1500,16 @@ export function YouTubeClient() {
           <DragDropContext onDragEnd={onDragEnd}>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               {COLUMNS.map((col) => {
-                const colVideos = videos.filter((v) => v.status === col.key);
+                const colVideos = sortByScheduled(
+                  videos.filter((v) => v.status === col.key)
+                    .filter((v) => {
+                      if (dateFilter === "archived") return !!v.archived;
+                      if (v.archived) return false;
+                      if (dateFilter === "all") return true;
+                      if (dateFilter === "dated") return !!v.scheduledDate;
+                      return !v.scheduledDate;
+                    })
+                );
                 return (
                   <div key={col.key} className="flex flex-col gap-3">
                     {/* Column header */}
