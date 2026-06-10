@@ -222,7 +222,7 @@ function BoardCardItem({
 
           <Dialog open={editOpen} onOpenChange={setEditOpen}>
             <DialogContent
-              className="max-w-md bg-card border-border"
+              className="max-w-md max-h-[85vh] overflow-y-auto bg-card border-border"
               onClick={(e) => e.stopPropagation()}
             >
               <DialogHeader>
