@@ -22,6 +22,7 @@ import {
 import { cn } from "@/lib/utils";
 import { ChevronLeft, ChevronRight, PlusCircle, Download } from "lucide-react";
 import { DatePicker } from "@/components/ui/date-picker";
+import { notifyScheduled } from "@/lib/notify-scheduled";
 
 type Format = "reel" | "post" | "album" | "story" | "yt-short" | "yt-long" | "yt-live" | "x-post" | "fb-post" | "li-post";
 type Status = "ideas" | "scripted" | "filming" | "posted";
@@ -350,6 +351,14 @@ export function CalendarClient() {
       saveToLocalStorage(updated);
     }
 
+    if (form.scheduledDate) {
+      notifyScheduled({
+        board: "calendar",
+        title: form.title.trim(),
+        date: form.scheduledDate,
+      });
+    }
+
     setForm({ title: "", caption: "", format: "reel", status: "ideas", scheduledDate: "" });
     setAddOpen(false);
   }
@@ -383,6 +392,10 @@ export function CalendarClient() {
       } catch {
         // fall through to local update
       }
+    }
+
+    if (!post.scheduledDate) {
+      notifyScheduled({ board: "calendar", title: post.title, date: dateStr });
     }
 
     setPosts(updated);

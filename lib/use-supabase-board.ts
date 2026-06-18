@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
+import { notifyScheduled } from "@/lib/notify-scheduled";
 
 export interface BoardCard {
   id: string;
@@ -24,6 +25,11 @@ export function useSupabaseBoard<T extends BoardCard>(
   const [cards, setCards] = useState<T[]>([]);
   const [mounted, setMounted] = useState(false);
   const loading = useRef(false);
+  const cardsRef = useRef<T[]>([]);
+
+  useEffect(() => {
+    cardsRef.current = cards;
+  }, [cards]);
 
   useEffect(() => {
     if (loading.current) return;
@@ -84,6 +90,15 @@ export function useSupabaseBoard<T extends BoardCard>(
         data: card,
       });
 
+      const sd = (card as Record<string, unknown>).scheduledDate;
+      if (sd) {
+        notifyScheduled({
+          board: boardName,
+          title: String((card as Record<string, unknown>).text ?? ""),
+          date: String(sd),
+        });
+      }
+
       return card;
     },
     [boardName, idPrefix]
@@ -91,6 +106,8 @@ export function useSupabaseBoard<T extends BoardCard>(
 
   const updateCard = useCallback(
     async (id: string, updates: Partial<T>) => {
+      const oldCard = cardsRef.current.find((c) => c.id === id);
+
       setCards((prev) => {
         const next = prev.map((c) => (c.id === id ? { ...c, ...updates } : c));
         const updated = next.find((c) => c.id === id);
@@ -105,6 +122,18 @@ export function useSupabaseBoard<T extends BoardCard>(
         }
         return next;
       });
+
+      const oldDate = (oldCard as Record<string, unknown> | undefined)?.scheduledDate;
+      const newDate = (updates as Record<string, unknown>).scheduledDate;
+      if (!oldDate && newDate) {
+        notifyScheduled({
+          board: boardName,
+          title: String(
+            (oldCard as Record<string, unknown> | undefined)?.text ?? ""
+          ),
+          date: String(newDate),
+        });
+      }
     },
     [boardName]
   );

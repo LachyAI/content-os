@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { notifyScheduled } from "@/lib/notify-scheduled";
 import {
   Select,
   SelectContent,
@@ -1782,6 +1783,11 @@ export function InstagramClient() {
       saveToLocalStorage(updated);
     }
 
+    // Ping Slack when a reel is created already carrying a scheduled date.
+    if (form.scheduledDate) {
+      notifyScheduled({ board: "instagram", title: form.title.trim(), date: form.scheduledDate });
+    }
+
     setForm({ title: "", caption: "", format: "reel", status: "ideas", scheduledDate: "", scriptId: "" });
     setAddOpen(false);
   }
@@ -1904,6 +1910,12 @@ export function InstagramClient() {
       }
     } else {
       saveToLocalStorage(updated);
+    }
+
+    // Ping Slack only the first time a reel gains a scheduled date (matches the
+    // !oldDate && newDate semantics used by the other content boards).
+    if (!editPost.scheduledDate && editForm.scheduledDate) {
+      notifyScheduled({ board: "instagram", title: editForm.title.trim(), date: editForm.scheduledDate });
     }
 
     setEditOpen(false);
