@@ -286,7 +286,9 @@ function BoardCardItem({
                     className="bg-background border-border text-sm h-9 w-full"
                   />
                 </div>
-                {(form.format === "reel" || form.format === "video") && (
+                {(form.format === "reel" ||
+                  form.format === "overlay reel" ||
+                  form.format === "video") && (
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
                       Reel script
@@ -421,6 +423,10 @@ function AddCardDialog({
   const [format, setFormat] = useState<FbPersonalFormat | "none">("none");
   const [status, setStatus] = useState<FbPersonalStatus>("ideas");
   const [scheduledDate, setScheduledDate] = useState("");
+  const [reelScript, setReelScript] = useState("");
+
+  const showReelScript =
+    format === "reel" || format === "overlay reel" || format === "video";
 
   function handleAdd() {
     if (!text.trim()) return;
@@ -430,12 +436,14 @@ function AddCardDialog({
       postType: postType === "none" ? undefined : postType,
       format: format === "none" ? undefined : format,
       scheduledDate: scheduledDate || undefined,
+      reelScript: reelScript.trim() || undefined,
     });
     setText("");
     setPostType("none");
     setFormat("none");
     setStatus("ideas");
     setScheduledDate("");
+    setReelScript("");
     setOpen(false);
   }
 
@@ -516,6 +524,20 @@ function AddCardDialog({
               className="bg-background border-border text-sm h-9 w-full"
             />
           </div>
+          {showReelScript && (
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                Reel script
+              </label>
+              <Textarea
+                placeholder="Hook, beats, CTA — paste your reel script here"
+                value={reelScript}
+                onChange={(e) => setReelScript(e.target.value)}
+                rows={6}
+                className="bg-background border-border text-sm resize-none"
+              />
+            </div>
+          )}
           <div className="flex justify-end gap-2">
             <Button
               variant="outline"

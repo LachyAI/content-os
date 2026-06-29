@@ -14,12 +14,13 @@ export type FbPersonalPostType =
   | "Story / Personal"
   | "Poll";
 
-export type FbPersonalFormat = "post" | "story" | "reel" | "video" | "photo" | "text";
+export type FbPersonalFormat = "post" | "story" | "reel" | "overlay reel" | "video" | "photo" | "text";
 
 export const ALL_FB_PERSONAL_FORMATS: FbPersonalFormat[] = [
   "post",
   "story",
   "reel",
+  "overlay reel",
   "video",
   "photo",
   "text",
