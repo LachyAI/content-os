@@ -16,11 +16,11 @@ export interface YTSavedScript {
   updatedAt: string;
 }
 
-const STORAGE_KEY = "content-os-yt-scripts";
+const DEFAULT_STORAGE_KEY = "content-os-yt-scripts";
 
-function load(): YTSavedScript[] {
+function load(storageKey: string): YTSavedScript[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(storageKey);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as YTSavedScript[];
     return Array.isArray(parsed) ? parsed : [];
@@ -29,9 +29,9 @@ function load(): YTSavedScript[] {
   }
 }
 
-function save(scripts: YTSavedScript[]) {
+function save(storageKey: string, scripts: YTSavedScript[]) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(scripts));
+    localStorage.setItem(storageKey, JSON.stringify(scripts));
   } catch {
     // ignore quota errors
   }
@@ -52,14 +52,14 @@ export type YTScriptDraft = {
   tags?: string[];
 };
 
-export function useYTScripts() {
+export function useYTScripts(storageKey: string = DEFAULT_STORAGE_KEY) {
   const [scripts, setScripts] = useState<YTSavedScript[]>([]);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setScripts(load());
+    setScripts(load(storageKey));
     setMounted(true);
-  }, []);
+  }, [storageKey]);
 
   const upsert = useCallback((draft: YTScriptDraft): YTSavedScript => {
     const now = new Date().toISOString();
@@ -94,20 +94,20 @@ export function useYTScripts() {
         };
         next = [saved, ...prev];
       }
-      save(next);
+      save(storageKey, next);
       return next;
     });
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     return saved!;
-  }, []);
+  }, [storageKey]);
 
   const remove = useCallback((id: string) => {
     setScripts((prev) => {
       const next = prev.filter((s) => s.id !== id);
-      save(next);
+      save(storageKey, next);
       return next;
     });
-  }, []);
+  }, [storageKey]);
 
   const getById = useCallback(
     (id: string | undefined | null): YTSavedScript | undefined => {

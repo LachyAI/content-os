@@ -1,14 +1,8 @@
-import { PageHeader } from "@/components/page-header";
-import { YouTubeClient } from "./youtube-client";
+import { redirect } from "next/navigation";
 
+// The single YouTube manager was split into two channel workspaces:
+//   /youtube-seo  (@lachlanSEO, ClearScale)   /youtube-ai (@Lachlan-AI, LachlanCB)
+// The AI channel inherits the original board/scripts, so /youtube points there.
 export default function YouTubePage() {
-  return (
-    <div className="flex-1">
-      <PageHeader
-        title="YouTube Manager"
-        description="Plan, script, and track your YouTube content pipeline"
-      />
-      <YouTubeClient />
-    </div>
-  );
+  redirect("/youtube-ai");
 }

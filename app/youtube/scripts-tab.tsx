@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Copy, FileText, LayoutGrid, Loader2, Maximize2, Minimize2, PlusCircle, Search, Sparkles, Trash2, Wand2 } from "lucide-react";
 import { useYTScripts, type YTSavedScript, type YTScriptFormat, type YTScriptDraft } from "@/lib/use-yt-scripts";
+import { YT_CHANNELS, type YTChannel } from "@/lib/yt-channels";
 import { ScriptEditor } from "../instagram/script-editor";
 import { SCRIPTING_KNOWLEDGE } from "@/lib/scripting-knowledge";
 
@@ -96,8 +97,8 @@ const EMPTY_DRAFT: DraftState = {
   format: "long",
 };
 
-export function YTScriptsTab() {
-  const { scripts, upsert, remove, mounted } = useYTScripts();
+export function YTScriptsTab({ channel = "ai" }: { channel?: YTChannel }) {
+  const { scripts, upsert, remove, mounted } = useYTScripts(YT_CHANNELS[channel].scriptsKey);
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<DraftState>(EMPTY_DRAFT);

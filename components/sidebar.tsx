@@ -20,6 +20,7 @@ import {
   UsersRound,
   Briefcase,
   GitBranch,
+  Music2,
 } from "lucide-react";
 import { usePinnedPosts } from "@/lib/use-pinned-posts";
 
@@ -27,7 +28,9 @@ const navItems = [
   { label: "Home", href: "/", icon: LayoutDashboard },
   { label: "Competitors", href: "/competitors", icon: Users },
   { label: "Instagram Ai", href: "/instagram", icon: Grid2X2 },
-  { label: "YouTube", href: "/youtube", icon: PlayCircle },
+  { label: "YouTube SEO", href: "/youtube-seo", icon: PlayCircle },
+  { label: "YouTube AI", href: "/youtube-ai", icon: PlayCircle },
+  { label: "TikTok", href: "/tiktok", icon: Music2 },
   { label: "X / Threads", href: "/x-threads", icon: MessageSquare },
   { label: "FB Groups", href: "/fb-groups", icon: UsersRound },
   { label: "FB Personal", href: "/fb-personal", icon: Users },

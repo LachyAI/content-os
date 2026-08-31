@@ -40,6 +40,7 @@ import {
 import { DuplicateToDialog } from "@/components/duplicate-to-dialog";
 import type { YouTubeVideo } from "@/lib/youtube-competitor-data";
 import { YTScriptsTab } from "./scripts-tab";
+import { YT_CHANNELS, type YTChannel } from "@/lib/yt-channels";
 
 type VideoFormat = "short" | "long" | "live";
 type VideoStatus = "ideas" | "scripted" | "infographics" | "filming" | "published";
@@ -76,8 +77,6 @@ interface ClaudeIdea {
   format: VideoFormat;
   reasoning: string;
 }
-
-const STORAGE_KEY = "content-os-youtube-posts";
 
 const COLUMNS: { key: VideoStatus; label: string }[] = [
   { key: "ideas", label: "Ideas" },
@@ -334,7 +333,7 @@ function LogResultsDialog({
 
 // ─── AI Ideas Panel ───────────────────────────────────────────────────────────
 
-function AiIdeasPanel({ onUseIdea }: { onUseIdea: (idea: VideoIdea) => void }) {
+function AiIdeasPanel({ onUseIdea, context }: { onUseIdea: (idea: VideoIdea) => void; context: string }) {
   const [open, setOpen] = useState(false);
   const [claudeIdeas, setClaudeIdeas] = useState<ClaudeIdea[]>([]);
   const [fallbackIdeas, setFallbackIdeas] = useState<VideoIdea[]>([]);
@@ -392,7 +391,7 @@ function AiIdeasPanel({ onUseIdea }: { onUseIdea: (idea: VideoIdea) => void }) {
           platform: "youtube",
           competitorPosts: [],
           previousTitles,
-          context: "YouTube channel about AI automation, Claude Code, n8n, and agency business. Creator: Lachy, 29, Chiang Mai-based solopreneur.",
+          context,
         }),
       });
       if (res.ok) {
@@ -867,7 +866,7 @@ interface ScriptResult {
   script: string;
 }
 
-function ScriptGenerator({ onAddToBoard }: { onAddToBoard: (title: string, script: string, format: VideoFormat) => void }) {
+function ScriptGenerator({ onAddToBoard, context }: { onAddToBoard: (title: string, script: string, format: VideoFormat) => void; context: string }) {
   const [topic, setTopic] = useState("");
   const [format, setFormat] = useState<VideoFormat>("long");
   const [pillar, setPillar] = useState<ContentPillar>("Authority");
@@ -881,6 +880,8 @@ function ScriptGenerator({ onAddToBoard }: { onAddToBoard: (title: string, scrip
     setResult(null);
 
     const prompt = `You are a YouTube script architect. Generate a structured script outline for a ${format} video.
+
+Channel context: ${context}
 
 Topic: ${topic}
 Content Pillar: ${pillar}
@@ -1158,27 +1159,9 @@ function RecentYTVideos() {
 
 // ─── Tags Manager (IG-style pillar-based with AI generation) ─────────────────
 
-const YT_TAGS_KEY = "content-os-youtube-tags-v2";
-
-const DEFAULT_YT_TAG_SETS: Record<string, string[]> = {
-  "AI Automation": [
-    "ai automation", "n8n", "claude", "ai tools", "automation workflow",
-    "no-code automation", "business automation", "ai agent", "workflow automation",
-    "claude code",
-  ],
-  "Business & Agency": [
-    "online business", "solopreneur", "agency", "digital marketing",
-    "passive income", "entrepreneurship", "business systems", "make money online",
-    "ai agency", "saas",
-  ],
-  "Tech & Development": [
-    "coding", "developer tools", "ai coding", "python", "typescript",
-    "docker", "vps", "api", "programming", "tech tutorial",
-  ],
-};
-
-function TagsManager() {
-  const [sets, setSets] = useState<Record<string, string[]>>(DEFAULT_YT_TAG_SETS);
+function TagsManager({ channel }: { channel: YTChannel }) {
+  const cfg = YT_CHANNELS[channel];
+  const [sets, setSets] = useState<Record<string, string[]>>(cfg.tagDefaults);
   const [editingPillar, setEditingPillar] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
@@ -1187,15 +1170,15 @@ function TagsManager() {
 
   useEffect(() => {
     try {
-      const stored = localStorage.getItem(YT_TAGS_KEY);
+      const stored = localStorage.getItem(cfg.tagsKey);
       if (stored) setSets(JSON.parse(stored) as Record<string, string[]>);
     } catch { /* ignore */ }
-  }, []);
+  }, [cfg.tagsKey]);
 
   function saveSets(updated: Record<string, string[]>) {
     setSets(updated);
     try {
-      localStorage.setItem(YT_TAGS_KEY, JSON.stringify(updated));
+      localStorage.setItem(cfg.tagsKey, JSON.stringify(updated));
     } catch { /* ignore */ }
   }
 
@@ -1348,26 +1331,28 @@ function TagsManager() {
 
 // ─── Main Client ──────────────────────────────────────────────────────────────
 
-export function YouTubeClient() {
+export function YouTubeClient({ channel = "ai" }: { channel?: YTChannel }) {
+  const cfg = YT_CHANNELS[channel];
   const [videos, setVideos] = useState<VideoCard[]>([]);
   const [mounted, setMounted] = useState(false);
   const [groupByDate, setGroupByDate] = useState(false);
   const [dateFilter, setDateFilter] = useState<"all" | "dated" | "undated" | "archived">("all");
 
   useEffect(() => {
+    const seed = cfg.seedSamples ? SAMPLE_VIDEOS : [];
     try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      setVideos(stored ? (JSON.parse(stored) as VideoCard[]) : SAMPLE_VIDEOS);
+      const stored = localStorage.getItem(cfg.postsKey);
+      setVideos(stored ? (JSON.parse(stored) as VideoCard[]) : seed);
     } catch {
-      setVideos(SAMPLE_VIDEOS);
+      setVideos(seed);
     }
     setMounted(true);
-  }, []);
+  }, [cfg.postsKey, cfg.seedSamples]);
 
   function persist(updated: VideoCard[]) {
     setVideos(updated);
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      localStorage.setItem(cfg.postsKey, JSON.stringify(updated));
     } catch { /* ignore */ }
   }
 
@@ -1490,7 +1475,7 @@ export function YouTubeClient() {
               <CalendarDays size={13} />
               {groupByDate ? "Grouped" : "Group by date"}
             </Button>
-            <AiIdeasPanel onUseIdea={useIdea} />
+            <AiIdeasPanel onUseIdea={useIdea} context={cfg.aiContext} />
             <AddVideoDialog onAdd={addVideo} />
           </div>
         </div>
@@ -1565,17 +1550,17 @@ export function YouTubeClient() {
 
         {/* Scripts tab */}
         <TabsContent value="scripts">
-          <YTScriptsTab />
+          <YTScriptsTab channel={channel} />
         </TabsContent>
 
         {/* Script Generator tab */}
         <TabsContent value="script-generator">
-          <ScriptGenerator onAddToBoard={addScriptToBoard} />
+          <ScriptGenerator onAddToBoard={addScriptToBoard} context={cfg.aiContext} />
         </TabsContent>
 
         {/* Tags tab */}
         <TabsContent value="tags">
-          <TagsManager />
+          <TagsManager channel={channel} />
         </TabsContent>
 
         {/* Script Guide tab */}
