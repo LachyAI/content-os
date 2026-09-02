@@ -1541,8 +1541,16 @@ function YouTubeTab() {
 
   useEffect(() => {
     try {
+      const defaults = DEFAULT_YT_CHANNELS.map((c) => c.channelId);
       const storedChannels = localStorage.getItem(YT_CHANNELS_KEY);
-      setChannels(storedChannels ? JSON.parse(storedChannels) : DEFAULT_YT_CHANNELS.map((c) => c.channelId));
+      const stored: string[] = storedChannels ? JSON.parse(storedChannels) : [];
+      // Merge in any default channels the stored list is missing (e.g. new SEO
+      // competitors added in code) without dropping the user's own additions.
+      const merged = [...stored, ...defaults.filter((id) => !stored.includes(id))];
+      setChannels(merged);
+      if (merged.length !== stored.length) {
+        localStorage.setItem(YT_CHANNELS_KEY, JSON.stringify(merged));
+      }
       const storedVideos = localStorage.getItem(YT_STORAGE_KEY);
       if (storedVideos) setVideos(JSON.parse(storedVideos));
     } catch {
@@ -1597,6 +1605,7 @@ function YouTubeTab() {
     return DEFAULT_YT_CHANNELS.map((c) => ({
       channelId: c.channelId,
       channelName: c.channelName,
+      category: c.category,
       videoCount: 0,
       avgViews: 0,
       avgLikes: 0,
@@ -1738,12 +1747,27 @@ function YouTubeTab() {
             <CardContent className="pt-4 pb-4">
               <div className="mb-3">
                 <p className="text-sm font-medium text-primary truncate">{s.channelName}</p>
-                <Badge
-                  variant="outline"
-                  className="text-[10px] mt-1.5 px-1.5 py-0 h-4 bg-red-500/10 text-red-400 border-red-500/20"
-                >
-                  youtube
-                </Badge>
+                <div className="flex gap-1 mt-1.5">
+                  <Badge
+                    variant="outline"
+                    className="text-[10px] px-1.5 py-0 h-4 bg-red-500/10 text-red-400 border-red-500/20"
+                  >
+                    youtube
+                  </Badge>
+                  {s.category && (
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        "text-[10px] px-1.5 py-0 h-4",
+                        s.category === "seo"
+                          ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                          : "bg-sky-500/10 text-sky-400 border-sky-500/20"
+                      )}
+                    >
+                      {s.category === "seo" ? "SEO" : "AI"}
+                    </Badge>
+                  )}
+                </div>
               </div>
               <div className="space-y-1.5">
                 <div className="flex justify-between text-xs">
