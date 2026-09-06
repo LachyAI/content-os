@@ -1640,6 +1640,31 @@ function YouTubeTab() {
     }
   }
 
+  // Two channels, two brands — keep the competitor sets visually separate.
+  // knowledge/operational/youtube-channels.md is the source of truth for the split.
+  const channelGroups = useMemo(() => {
+    return [
+      {
+        key: "seo",
+        title: "ClearScale — @lachlanSEO",
+        note: "AU local SEO for tradies",
+        items: summaries.filter((s) => s.category === "seo"),
+      },
+      {
+        key: "ai",
+        title: "LachlanCB — @Lachlan-AI",
+        note: "AI automation for agency owners",
+        items: summaries.filter((s) => s.category === "ai"),
+      },
+      {
+        key: "other",
+        title: "Unassigned",
+        note: "Added by hand — no brand set",
+        items: summaries.filter((s) => s.category !== "seo" && s.category !== "ai"),
+      },
+    ].filter((g) => g.items.length > 0);
+  }, [summaries]);
+
   function formatDuration(seconds: number): string {
     if (!seconds) return "—";
     const m = Math.floor(seconds / 60);
@@ -1733,58 +1758,71 @@ function YouTubeTab() {
         )}
       </div>
 
-      {/* Channel cards */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
-        {summaries.map((s) => (
-          <Card
-            key={s.channelId}
-            onClick={() => setSelectedChannel(selectedChannel === s.channelId ? null : s.channelId)}
-            className={cn(
-              "bg-card border-border cursor-pointer transition-all hover:border-primary/40",
-              selectedChannel === s.channelId && "border-primary ring-1 ring-primary/30"
-            )}
-          >
-            <CardContent className="pt-4 pb-4">
-              <div className="mb-3">
-                <p className="text-sm font-medium text-primary truncate">{s.channelName}</p>
-                <div className="flex gap-1 mt-1.5">
-                  <Badge
-                    variant="outline"
-                    className="text-[10px] px-1.5 py-0 h-4 bg-red-500/10 text-red-400 border-red-500/20"
-                  >
-                    youtube
-                  </Badge>
-                  {s.category && (
+      {/* Channel cards — split by brand */}
+      <div className="space-y-6">
+        {channelGroups.map((group) => (
+          <div key={group.key}>
+            <div className="flex items-baseline gap-2 mb-2">
+              <h2 className="text-sm font-medium">{group.title}</h2>
+              <span className="text-xs text-muted-foreground">{group.note}</span>
+              <span className="text-xs text-muted-foreground ml-auto">
+                {group.items.length} {group.items.length === 1 ? "channel" : "channels"}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
+              {group.items.map((s) => (
+            <Card
+              key={s.channelId}
+              onClick={() => setSelectedChannel(selectedChannel === s.channelId ? null : s.channelId)}
+              className={cn(
+                "bg-card border-border cursor-pointer transition-all hover:border-primary/40",
+                selectedChannel === s.channelId && "border-primary ring-1 ring-primary/30"
+              )}
+            >
+              <CardContent className="pt-4 pb-4">
+                <div className="mb-3">
+                  <p className="text-sm font-medium text-primary truncate">{s.channelName}</p>
+                  <div className="flex gap-1 mt-1.5">
                     <Badge
                       variant="outline"
-                      className={cn(
-                        "text-[10px] px-1.5 py-0 h-4",
-                        s.category === "seo"
-                          ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
-                          : "bg-sky-500/10 text-sky-400 border-sky-500/20"
-                      )}
+                      className="text-[10px] px-1.5 py-0 h-4 bg-red-500/10 text-red-400 border-red-500/20"
                     >
-                      {s.category === "seo" ? "SEO" : "AI"}
+                      youtube
                     </Badge>
-                  )}
+                    {s.category && (
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "text-[10px] px-1.5 py-0 h-4",
+                          s.category === "seo"
+                            ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                            : "bg-sky-500/10 text-sky-400 border-sky-500/20"
+                        )}
+                      >
+                        {s.category === "seo" ? "SEO" : "AI"}
+                      </Badge>
+                    )}
+                  </div>
                 </div>
-              </div>
-              <div className="space-y-1.5">
-                <div className="flex justify-between text-xs">
-                  <span className="text-muted-foreground">Videos</span>
-                  <span className="font-medium">{s.videoCount}</span>
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">Videos</span>
+                    <span className="font-medium">{s.videoCount}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">Avg views</span>
+                    <span className="font-medium">{s.avgViews.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">Avg likes</span>
+                    <span className="font-medium">{s.avgLikes.toLocaleString()}</span>
+                  </div>
                 </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-muted-foreground">Avg views</span>
-                  <span className="font-medium">{s.avgViews.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-muted-foreground">Avg likes</span>
-                  <span className="font-medium">{s.avgLikes.toLocaleString()}</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+              ))}
+            </div>
+          </div>
         ))}
       </div>
 

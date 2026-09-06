@@ -42,10 +42,27 @@ export const DEFAULT_YT_CHANNELS: YouTubeChannel[] = [
   { channelId: "UCHkzp52CldSPZqU5T49mOnA", channelName: "Mark Kashef", category: "ai" },
   { channelId: "UC2ojq-nuP8ceeHqiroeKhBA", channelName: "Nate Herk", category: "ai" },
   { channelId: "UCOuGATIAbd2DvzJmUgXn2IQ", channelName: "NetworkChuck", category: "ai" },
-  // SEO channel (ClearScale / @lachlanSEO) competitors — both confirmed BEST by Lachy
-  // 2026-09-01 (knowledge/resources/reference-youtube-local-marketing-channels.md).
+  { channelId: "UCFlzajVv85qdx_WJfbcjhVw", channelName: "Michele Torti", category: "ai" },
+  { channelId: "UCpStyje9QwpXSOThjCy285Q", channelName: "Christian Krause", category: "ai" },
+  // SEO channel (ClearScale / @lachlanSEO) competitors.
+  //
+  // The five FORMAT references — other people selling local SEO to home-service businesses.
+  // Sources: knowledge/resources/reference-youtube-local-marketing-channels.md (Igler + Yash
+  // "confirmed BEST by Lachy 2026-09-01"), knowledge/resources/content-swipe/youtube.md
+  // (gold-tier study roster), knowledge/projects/content/thumbnails.md ("named by Lachy").
   { channelId: "UC4ebtv3wqj4ob7SomXzyrTA", channelName: "Noah Igler", category: "seo" },
   { channelId: "UCpgy-8rFmEB4UmAYMIIX4wA", channelName: "SEO with Yash", category: "seo" },
+  { channelId: "UCZZKVsFNRU1RiwA_hRDECxA", channelName: "Tony Gee — Strictly Plumbers", category: "seo" },
+  { channelId: "UCY-H-Nuuh_zZzijyq23p_Iw", channelName: "Joel Perna", category: "seo" },
+  { channelId: "UCkMjMfgT3gAP1RXiMxOFj-g", channelName: "Stephen Baker", category: "seo" },
+  //
+  // ICP channels — not SEO competitors. These sell coaching/software/websites to the same AU
+  // tradie audience, so they are the read on what that audience already watches and the
+  // vocabulary it responds to. Added 2026-09-06.
+  { channelId: "UCz1HEO09uV4SVy5NphET6NQ", channelName: "Tradesman Digital Marketing", category: "seo" },
+  { channelId: "UCoynaiW7H1L2uwIcgggowhw", channelName: "Profitable Tradie", category: "seo" },
+  { channelId: "UCcM3Medh6coSWbHegs6PVBg", channelName: "The Site Shed", category: "seo" },
+  { channelId: "UCBf6J4N40cRexKbvzpZa1Gg", channelName: "Websites That Sell", category: "seo" },
 ];
 
 export function buildYouTubeSummaries(videos: YouTubeVideo[]): YouTubeChannelSummary[] {
