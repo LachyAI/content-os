@@ -1601,17 +1601,33 @@ function YouTubeTab() {
   }
 
   const summaries: YouTubeChannelSummary[] = useMemo(() => {
-    if (videos.length > 0) return buildYouTubeSummaries(videos);
-    return DEFAULT_YT_CHANNELS.map((c) => ({
-      channelId: c.channelId,
-      channelName: c.channelName,
-      category: c.category,
-      videoCount: 0,
-      avgViews: 0,
-      avgLikes: 0,
-      avgComments: 0,
-      videos: [],
-    }));
+    const scraped = videos.length > 0 ? buildYouTubeSummaries(videos) : [];
+
+    // Every tracked channel gets a card whether or not it has scraped videos yet.
+    // buildYouTubeSummaries only knows about channels present in the scrape, so a
+    // channel added since the last Scrape All would otherwise vanish from the page
+    // entirely — which reads as "my change didn't ship", not "no data yet".
+    // Videos may arrive without a channelId, so match on name as well as id.
+    const covered = new Set<string>();
+    for (const s of scraped) {
+      covered.add(s.channelId);
+      covered.add(s.channelName);
+    }
+
+    const placeholders = DEFAULT_YT_CHANNELS
+      .filter((c) => !covered.has(c.channelId) && !covered.has(c.channelName))
+      .map((c) => ({
+        channelId: c.channelId,
+        channelName: c.channelName,
+        category: c.category,
+        videoCount: 0,
+        avgViews: 0,
+        avgLikes: 0,
+        avgComments: 0,
+        videos: [],
+      }));
+
+    return [...scraped, ...placeholders];
   }, [videos]);
 
   const selectedSummary = summaries.find((s) => s.channelId === selectedChannel || s.channelName === selectedChannel);
