@@ -2,7 +2,7 @@
 
 import { supabase } from "@/lib/supabase"
 
-export type BoardTarget = "fb-groups" | "fb-personal" | "fb-biz" | "linkedin" | "x-threads" | "instagram" | "youtube"
+export type BoardTarget = "fb-groups" | "fb-personal" | "fb-biz" | "linkedin" | "x-threads" | "instagram" | "youtube" | "tiktok"
 
 export const BOARD_TARGETS: { key: BoardTarget; label: string }[] = [
   { key: "fb-groups", label: "FB Groups" },
@@ -12,6 +12,7 @@ export const BOARD_TARGETS: { key: BoardTarget; label: string }[] = [
   { key: "x-threads", label: "X / Threads" },
   { key: "instagram", label: "Instagram" },
   { key: "youtube", label: "YouTube" },
+  { key: "tiktok", label: "TikTok" },
 ]
 
 function newId(prefix: string) {
@@ -27,6 +28,7 @@ const ID_PREFIX: Record<BoardTarget, string> = {
   "x-threads": "x",
   "instagram": "ig",
   "youtube": "yt",
+  "tiktok": "tt",
 }
 
 export async function duplicateCardTo(text: string, target: BoardTarget): Promise<boolean> {
