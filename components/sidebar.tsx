@@ -21,12 +21,14 @@ import {
   Briefcase,
   GitBranch,
   Music2,
+  ClipboardCheck,
 } from "lucide-react";
 import { usePinnedPosts } from "@/lib/use-pinned-posts";
 
 const navItems = [
   { label: "Home", href: "/", icon: LayoutDashboard },
   { label: "Competitors", href: "/competitors", icon: Users },
+  { label: "Audit", href: "/audit", icon: ClipboardCheck },
   { label: "Instagram Ai", href: "/instagram", icon: Grid2X2 },
   { label: "YouTube SEO", href: "/youtube-seo", icon: PlayCircle },
   { label: "YouTube AI", href: "/youtube-ai", icon: PlayCircle },
