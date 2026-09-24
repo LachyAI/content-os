@@ -24,7 +24,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import type { CompetitorSummary, Post, RawPost } from "@/lib/competitor-data";
 import { getAllPosts, getCompetitors } from "@/lib/competitor-data";
-import type { YouTubeVideo, YouTubeChannelSummary } from "@/lib/youtube-competitor-data";
+import type { YouTubeChannel, YouTubeVideo, YouTubeChannelSummary } from "@/lib/youtube-competitor-data";
 import { DEFAULT_YT_CHANNELS, buildYouTubeSummaries } from "@/lib/youtube-competitor-data";
 import { ArrowUpDown, Bookmark, ExternalLink, Loader2, PlusCircle, RefreshCw, Trash2, Zap } from "lucide-react";
 import { usePinnedPosts } from "@/lib/use-pinned-posts";
@@ -1524,6 +1524,7 @@ function YouTubeAnalysisTab({ videos, summaries }: { videos: YouTubeVideo[]; sum
 
 const YT_STORAGE_KEY = "yt-scraped-data";
 const YT_CHANNELS_KEY = "yt-competitor-channels";
+const YT_USER_CHANNELS_KEY = "yt-user-channels";
 
 type YTSortKey = "publishedAt" | "viewCount" | "likeCount" | "commentCount";
 type YTSortDir = "asc" | "desc";
@@ -1535,6 +1536,8 @@ function YouTubeTab() {
   const [scrapeResult, setScrapeResult] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [newChannelId, setNewChannelId] = useState("");
+  const [newChannelCategory, setNewChannelCategory] = useState<"seo" | "ai">("seo");
+  const [userChannels, setUserChannels] = useState<YouTubeChannel[]>([]);
   const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<YTSortKey>("viewCount");
   const [sortDir, setSortDir] = useState<YTSortDir>("desc");
@@ -1553,6 +1556,8 @@ function YouTubeTab() {
       }
       const storedVideos = localStorage.getItem(YT_STORAGE_KEY);
       if (storedVideos) setVideos(JSON.parse(storedVideos));
+      const storedUserChannels = localStorage.getItem(YT_USER_CHANNELS_KEY);
+      if (storedUserChannels) setUserChannels(JSON.parse(storedUserChannels));
     } catch {
       setChannels(DEFAULT_YT_CHANNELS.map((c) => c.channelId));
     }
@@ -1565,16 +1570,31 @@ function YouTubeTab() {
 
   function addChannel() {
     const id = newChannelId.trim();
-    if (id && !channels.includes(id)) {
+    if (!id) { setAddOpen(false); return; }
+    if (!channels.includes(id)) {
       saveChannels([...channels, id]);
     }
+    if (!userChannels.some((c) => c.channelId === id) && !DEFAULT_YT_CHANNELS.some((c) => c.channelId === id)) {
+      const updated = [...userChannels, { channelId: id, channelName: id, category: newChannelCategory }];
+      setUserChannels(updated);
+      localStorage.setItem(YT_USER_CHANNELS_KEY, JSON.stringify(updated));
+    }
     setNewChannelId("");
+    setNewChannelCategory("seo");
     setAddOpen(false);
+  }
+
+  function removeChannel(channelId: string) {
+    saveChannels(channels.filter((id) => id !== channelId));
+    const updated = userChannels.filter((c) => c.channelId !== channelId);
+    setUserChannels(updated);
+    localStorage.setItem(YT_USER_CHANNELS_KEY, JSON.stringify(updated));
+    if (selectedChannel === channelId) setSelectedChannel(null);
   }
 
   async function scrapeAll() {
     setScraping(true);
-    setScrapeResult(null);
+    setScrapeResult("Starting scrape...");
     try {
       const channelUrls = channels.map((id) =>
         id.startsWith("UC") ? `https://www.youtube.com/channel/${id}` : `https://www.youtube.com/@${id}`
@@ -1587,12 +1607,36 @@ function YouTubeTab() {
       const data = await res.json();
       if (!res.ok) {
         setScrapeResult(`Error: ${data.error ?? "Unknown error"}`);
-      } else {
-        const newVideos = data.videos as YouTubeVideo[];
-        setVideos(newVideos);
-        localStorage.setItem(YT_STORAGE_KEY, JSON.stringify(newVideos));
-        setScrapeResult(`${data.count} videos scraped`);
+        return;
       }
+      const runId = data.runId;
+      if (!runId) {
+        setScrapeResult("Error: No run ID returned from Apify");
+        return;
+      }
+      for (let i = 0; i < 120; i++) {
+        await new Promise((r) => setTimeout(r, 5000));
+        setScrapeResult(`Scraping ${channelUrls.length} channels... (${(i + 1) * 5}s)`);
+        try {
+          const statusRes = await fetch(`/api/scrape-youtube/status?runId=${runId}`);
+          const statusData = await statusRes.json();
+          if (statusData.status === "SUCCEEDED") {
+            const newVideos = statusData.videos as YouTubeVideo[];
+            setVideos(newVideos);
+            localStorage.setItem(YT_STORAGE_KEY, JSON.stringify(newVideos));
+            setScrapeResult(`${statusData.count} videos scraped`);
+            return;
+          }
+          if (statusData.status !== "RUNNING") {
+            setScrapeResult(`Error: ${statusData.error ?? statusData.status}`);
+            return;
+          }
+        } catch (err) {
+          setScrapeResult(`Poll error: ${String(err)}`);
+          return;
+        }
+      }
+      setScrapeResult("Scrape timed out after 10 minutes");
     } catch (err) {
       setScrapeResult(`Error: ${String(err)}`);
     } finally {
@@ -1603,18 +1647,23 @@ function YouTubeTab() {
   const summaries: YouTubeChannelSummary[] = useMemo(() => {
     const scraped = videos.length > 0 ? buildYouTubeSummaries(videos) : [];
 
-    // Every tracked channel gets a card whether or not it has scraped videos yet.
-    // buildYouTubeSummaries only knows about channels present in the scrape, so a
-    // channel added since the last Scrape All would otherwise vanish from the page
-    // entirely — which reads as "my change didn't ship", not "no data yet".
-    // Videos may arrive without a channelId, so match on name as well as id.
+    for (const s of scraped) {
+      if (!s.category) {
+        const userCh = userChannels.find((c) =>
+          c.channelId === s.channelId || c.channelId === s.channelName || c.channelName === s.channelName
+        );
+        if (userCh) s.category = userCh.category;
+      }
+    }
+
     const covered = new Set<string>();
     for (const s of scraped) {
       covered.add(s.channelId);
       covered.add(s.channelName);
     }
 
-    const placeholders = DEFAULT_YT_CHANNELS
+    const allDefaults = [...DEFAULT_YT_CHANNELS, ...userChannels];
+    const placeholders = allDefaults
       .filter((c) => !covered.has(c.channelId) && !covered.has(c.channelName))
       .map((c) => ({
         channelId: c.channelId,
@@ -1628,7 +1677,7 @@ function YouTubeTab() {
       }));
 
     return [...scraped, ...placeholders];
-  }, [videos]);
+  }, [videos, userChannels]);
 
   const selectedSummary = summaries.find((s) => s.channelId === selectedChannel || s.channelName === selectedChannel);
 
@@ -1749,6 +1798,17 @@ function YouTubeTab() {
                     className="bg-input border-border"
                   />
                 </div>
+                <div>
+                  <label className="text-sm text-muted-foreground mb-1.5 block">Brand</label>
+                  <select
+                    value={newChannelCategory}
+                    onChange={(e) => setNewChannelCategory(e.target.value as "seo" | "ai")}
+                    className="w-full px-3 py-2 text-sm rounded-md border border-border bg-input text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
+                  >
+                    <option value="seo">ClearScale — @lachlanSEO (SEO)</option>
+                    <option value="ai">LachlanCB — @Lachlan-AI (AI)</option>
+                  </select>
+                </div>
                 <div className="flex justify-end gap-2">
                   <Button variant="outline" onClick={() => setAddOpen(false)} className="border-border">Cancel</Button>
                   <Button
@@ -1797,7 +1857,23 @@ function YouTubeTab() {
             >
               <CardContent className="pt-4 pb-4">
                 <div className="mb-3">
-                  <p className="text-sm font-medium text-primary truncate">{s.channelName}</p>
+                  <div className="flex items-start justify-between gap-1">
+                    <p className="text-sm font-medium text-primary truncate">{s.channelName}</p>
+                    {userChannels.some((c) => c.channelId === s.channelId) && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (confirm(`Remove ${s.channelName} from tracking?`)) {
+                            removeChannel(s.channelId);
+                          }
+                        }}
+                        title={`Remove ${s.channelName}`}
+                        className="text-muted-foreground hover:text-red-400 transition-colors shrink-0"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    )}
+                  </div>
                   <div className="flex gap-1 mt-1.5">
                     <Badge
                       variant="outline"

@@ -63,6 +63,7 @@ export const DEFAULT_YT_CHANNELS: YouTubeChannel[] = [
   { channelId: "UCoynaiW7H1L2uwIcgggowhw", channelName: "Profitable Tradie", category: "seo" },
   { channelId: "UCcM3Medh6coSWbHegs6PVBg", channelName: "The Site Shed", category: "seo" },
   { channelId: "UCBf6J4N40cRexKbvzpZa1Gg", channelName: "Websites That Sell", category: "seo" },
+  { channelId: "UCoR_sZxdVkcWjVM2BvKNKSQ", channelName: "Brandon Willington", category: "seo" },
 ];
 
 export function buildYouTubeSummaries(videos: YouTubeVideo[]): YouTubeChannelSummary[] {
@@ -96,7 +97,7 @@ export function buildYouTubeSummaries(videos: YouTubeVideo[]): YouTubeChannelSum
 
     return {
       channelId: key,
-      channelName: defaultChannel?.channelName ?? first?.channelName ?? key,
+      channelName: first?.channelName ?? defaultChannel?.channelName ?? key,
       category: defaultChannel?.category,
       videoCount: channelVideos.length,
       avgViews,
