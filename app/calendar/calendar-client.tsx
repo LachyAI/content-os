@@ -23,6 +23,8 @@ import { cn } from "@/lib/utils";
 import { ChevronLeft, ChevronRight, PlusCircle, Download } from "lucide-react";
 import { DatePicker } from "@/components/ui/date-picker";
 import { notifyScheduled } from "@/lib/notify-scheduled";
+import { brandDot, useQueuePosts, type QueueCard } from "@/lib/use-queue-posts";
+import { QueuePostDialog } from "@/components/queue-post-dialog";
 
 type Format = "reel" | "post" | "album" | "story" | "yt-short" | "yt-long" | "yt-live" | "x-post" | "fb-post" | "li-post";
 type Status = "ideas" | "scripted" | "filming" | "posted";
@@ -141,6 +143,8 @@ export function CalendarClient() {
   const [posts, setPosts] = useState<PostCard[]>([]);
   const [useSupabase, setUseSupabase] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const { posts: queuePosts } = useQueuePosts();
+  const [openQueue, setOpenQueue] = useState<QueueCard | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [addDate, setAddDate] = useState("");
   const [importOpen, setImportOpen] = useState(false);
@@ -444,10 +448,15 @@ export function CalendarClient() {
 
   const selectedPosts = selectedDate ? (postsByDate[selectedDate] ?? []) : [];
 
+  // Queued posts synced after each batch (read-only)
+  const queueByDate: Record<string, QueueCard[]> = {};
+  for (const q of queuePosts) (queueByDate[q.date] ??= []).push(q);
+  const selectedQueue = selectedDate ? (queueByDate[selectedDate] ?? []) : [];
+
   const YEAR_RANGE = Array.from({ length: 5 }, (_, i) => now.getFullYear() - 2 + i);
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="p-4 md:p-6 space-y-4">
       {/* Navigation bar */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -498,7 +507,7 @@ export function CalendarClient() {
         ))}
       </div>
 
-      <div className={cn("grid gap-4", selectedDate ? "grid-cols-[1fr_280px]" : "grid-cols-1")}>
+      <div className={cn("grid gap-4", selectedDate ? "grid-cols-1 md:grid-cols-[1fr_280px]" : "grid-cols-1")}>
         {/* Calendar grid */}
         <div>
           <Card className="bg-card border-border overflow-hidden">
@@ -517,6 +526,7 @@ export function CalendarClient() {
                 const isToday = cell.dateStr === todayStr;
                 const isSelected = cell.dateStr === selectedDate;
                 const dayPosts = cell.dateStr ? (postsByDate[cell.dateStr] ?? []) : [];
+                const dayQueue = cell.dateStr ? (queueByDate[cell.dateStr] ?? []) : [];
 
                 return (
                   <div
@@ -545,6 +555,18 @@ export function CalendarClient() {
                         )}>
                           {cell.day}
                         </div>
+
+                        {/* Queued post dots, coloured by brand */}
+                        {dayQueue.length > 0 && (
+                          <div className="flex flex-wrap gap-0.5 mb-0.5">
+                            {dayQueue.slice(0, 6).map((q) => (
+                              <span key={q.id} className={cn("w-1.5 h-1.5 rounded-full", brandDot(q.brand))} title={q.platform} />
+                            ))}
+                            {dayQueue.length > 6 && (
+                              <span className="text-[9px] text-muted-foreground leading-none mt-0.5">+{dayQueue.length - 6}</span>
+                            )}
+                          </div>
+                        )}
 
                         {/* Post dots */}
                         {dayPosts.length > 0 && (
@@ -600,7 +622,30 @@ export function CalendarClient() {
               </div>
             </div>
 
-            {selectedPosts.length === 0 ? (
+            {selectedQueue.length > 0 && (
+              <div className="space-y-1.5">
+                {selectedQueue.map((q) => (
+                  <button
+                    key={q.id}
+                    onClick={() => setOpenQueue(q)}
+                    className="flex w-full items-center gap-2 rounded-md border border-border bg-card p-2 text-left hover:bg-secondary/40 transition-colors"
+                  >
+                    {q.image ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={q.image} alt="" className="h-9 w-9 shrink-0 rounded object-cover" />
+                    ) : (
+                      <span className={cn("ml-1 w-2 h-2 shrink-0 rounded-full", brandDot(q.brand))} />
+                    )}
+                    <div className="min-w-0">
+                      <div className="text-xs font-medium truncate">{q.platform} · {q.time ?? "Facebook"}</div>
+                      <div className="text-[11px] text-muted-foreground truncate">{q.label ?? q.text.split("\n")[0]}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {selectedPosts.length === 0 && selectedQueue.length > 0 ? null : selectedPosts.length === 0 ? (
               <Card className="bg-card border-border">
                 <CardContent className="py-8 flex flex-col items-center justify-center text-center">
                   <p className="text-xs text-muted-foreground mb-3">No posts scheduled</p>
@@ -799,6 +844,8 @@ export function CalendarClient() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <QueuePostDialog post={openQueue} open={openQueue !== null} onOpenChange={(o) => !o && setOpenQueue(null)} />
     </div>
   );
 }
