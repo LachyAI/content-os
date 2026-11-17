@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { usePinnedPosts } from "@/lib/use-pinned-posts";
+import { SavedLinks } from "./saved-links";
 import { Bookmark, ExternalLink } from "lucide-react";
 
 const formatColors: Record<string, string> = {
@@ -25,6 +26,8 @@ export function PinnedClient() {
 
   return (
     <div className="p-4 md:p-6">
+      <SavedLinks />
+
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-lg font-semibold">Pinned Posts</h1>
