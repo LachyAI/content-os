@@ -24,9 +24,11 @@ export function QueuePostDialog({
 
   async function copy() {
     if (!post) return;
-    await navigator.clipboard.writeText(post.text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+    try {
+      await navigator.clipboard.writeText(post.text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {}
   }
 
   return (

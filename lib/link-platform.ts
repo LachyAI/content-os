@@ -23,7 +23,9 @@ const HOSTS: Array<[RegExp, LinkPlatform]> = [
   [/(^|\.)reddit\.com$|^redd\.it$/, "Reddit"],
 ];
 
-const TRACKING = /^(utm_.*|trk|trackingId|rcm|lipi|igsh|igshid|si|fbclid|mibextid|s|t)$/i;
+const TRACKING = /^(utm_.*|trk|trackingId|rcm|lipi|igsh|igshid|si|fbclid|mibextid)$/i;
+// X adds s= and t= to shared links; on YouTube t= is the timestamp, so these go only on X.
+const X_TRACKING = /^(s|t)$/i;
 
 export function detectPlatform(input: string): { url: string; platform: LinkPlatform } | null {
   const raw = input.trim();
@@ -35,8 +37,10 @@ export function detectPlatform(input: string): { url: string; platform: LinkPlat
     return null;
   }
   if (!u.hostname.includes(".")) return null;
-  for (const key of [...u.searchParams.keys()]) if (TRACKING.test(key)) u.searchParams.delete(key);
   const host = u.hostname.toLowerCase();
   const platform = HOSTS.find(([re]) => re.test(host))?.[1] ?? "Other";
+  for (const key of [...u.searchParams.keys()]) {
+    if (TRACKING.test(key) || (platform === "X" && X_TRACKING.test(key))) u.searchParams.delete(key);
+  }
   return { url: u.toString(), platform };
 }

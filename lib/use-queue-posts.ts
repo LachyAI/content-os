@@ -39,6 +39,7 @@ export function todayChiangMai() {
 export function useQueuePosts() {
   const [posts, setPosts] = useState<QueueCard[]>([]);
   const [mounted, setMounted] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     supabase
@@ -47,6 +48,7 @@ export function useQueuePosts() {
       .eq("board", "queue")
       .then(({ data, error }) => {
         if (error) console.error("[queue] load error:", error.message);
+        setFailed(Boolean(error));
         const cards = (data ?? []).map((row) => row.data as QueueCard);
         cards.sort((a, b) => a.at.localeCompare(b.at));
         setPosts(cards);
@@ -54,5 +56,5 @@ export function useQueuePosts() {
       });
   }, []);
 
-  return { posts, mounted };
+  return { posts, mounted, failed };
 }

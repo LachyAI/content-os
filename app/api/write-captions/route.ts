@@ -55,7 +55,7 @@ export async function POST(req: Request) {
       },
       body: JSON.stringify({
         model: "claude-opus-5-5",
-        max_tokens: 16000,
+        max_tokens: 8000,
         fallbacks: "default",
         system: buildSystemPrompt(),
         messages: [{ role: "user", content: `<idea>\n${idea}\n</idea>` }],

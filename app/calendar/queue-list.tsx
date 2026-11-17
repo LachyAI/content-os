@@ -11,7 +11,7 @@ const addDays = (d: string, n: number) =>
 
 // The posts going out soon, from the last batch sync. On a phone this is the main view.
 export function QueueList({ days = 14 }: { days?: number }) {
-  const { posts, mounted } = useQueuePosts();
+  const { posts, mounted, failed } = useQueuePosts();
   const [open, setOpen] = useState<QueueCard | null>(null);
   const [showAll, setShowAll] = useState(false);
 
@@ -36,7 +36,10 @@ export function QueueList({ days = 14 }: { days?: number }) {
         </span>
       </div>
 
-      {mounted && upcoming.length === 0 && (
+      {mounted && failed && (
+        <p className="text-xs text-red-400">Couldn&apos;t load the posts. Check your connection and reload.</p>
+      )}
+      {mounted && !failed && upcoming.length === 0 && (
         <p className="text-xs text-muted-foreground">Nothing queued. Posts show here after the next batch sync.</p>
       )}
 
