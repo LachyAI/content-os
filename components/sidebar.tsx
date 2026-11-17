@@ -21,11 +21,13 @@ import {
   Briefcase,
   GitBranch,
   Music2,
+  PenLine,
 } from "lucide-react";
 import { usePinnedPosts } from "@/lib/use-pinned-posts";
 
 const navItems = [
   { label: "Home", href: "/", icon: LayoutDashboard },
+  { label: "Write", href: "/write", icon: PenLine },
   { label: "Competitors", href: "/competitors", icon: Users },
   { label: "Instagram Ai", href: "/instagram", icon: Grid2X2 },
   { label: "YouTube SEO", href: "/youtube-seo", icon: PlayCircle },
