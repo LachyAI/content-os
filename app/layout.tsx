@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Sidebar } from "@/components/sidebar";
 import { PinGate } from "@/components/pin-gate";
+import Script from "next/script";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -41,6 +42,7 @@ export default function RootLayout({
             {children}
           </div>
         </PinGate>
+        <Script src="https://cdn.opscorescale.com/app-switcher.js" strategy="lazyOnload" />
       </body>
     </html>
   );

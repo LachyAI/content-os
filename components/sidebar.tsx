@@ -133,6 +133,7 @@ export function Sidebar() {
           Content <span className="text-primary">Manager</span>
           <span className="ml-2 text-muted-foreground font-normal">— {currentPage}</span>
         </span>
+        <div data-app-switcher className="ml-auto text-muted-foreground" />
       </div>
 
       {/* Mobile slide-over */}
@@ -167,10 +168,11 @@ export function Sidebar() {
 
       {/* Desktop sidebar */}
       <aside className="hidden md:flex w-56 shrink-0 bg-sidebar border-r border-sidebar-border flex-col min-h-screen">
-        <div className="px-4 py-5 border-b border-sidebar-border">
+        <div className="px-4 py-5 border-b border-sidebar-border flex items-center justify-between">
           <span className="text-sm font-semibold tracking-tight text-foreground">
             Content <span className="text-primary">Manager</span>
           </span>
+          <div data-app-switcher className="-my-2 -mr-2 text-muted-foreground" />
         </div>
 
         <nav className="flex-1 px-2 py-4 space-y-0.5">
